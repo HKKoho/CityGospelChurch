@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import { GoogleGenAI } from "@google/genai";
 import { Button } from './ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Sparkles, Loader2 } from 'lucide-react';
@@ -13,18 +12,13 @@ export const GeminiGuidance: React.FC = () => {
   const generateGuidance = async () => {
     setLoading(true);
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-      const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents: "Provide 3 contemporary tips for improving church community engagement using digital platforms. Focus on room booking efficiency and roll call accuracy.",
-        config: {
-          systemInstruction: "You are a digital transformation consultant for community organizations. Provide concise, actionable advice in markdown format.",
-        },
-      });
-      setGuidance(response.text || 'No guidance generated.');
+      const res = await fetch('/api/gemini/guidance', { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setGuidance(data.text);
     } catch (error) {
       console.error("Gemini error:", error);
-      setGuidance("Failed to generate guidance. Please check your API key.");
+      setGuidance("Failed to generate guidance. Please try again later.");
     } finally {
       setLoading(false);
     }
