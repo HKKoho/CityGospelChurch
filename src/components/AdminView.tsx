@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { db } from '../lib/firebase';
-import { collection, query, onSnapshot, doc, updateDoc, deleteDoc, addDoc, getDocs } from 'firebase/firestore';
+import { supabase } from '../lib/supabase';
 import { UserProfile, Booking, Room, MediaItem, WorksheetEntry, AttendanceRecord } from '../types';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
@@ -17,7 +16,6 @@ import { format } from 'date-fns';
 import { GeminiGuidance } from './GeminiGuidance';
 
 export const AdminView: React.FC = () => {
-  // ... existing states ...
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [rooms, setRooms] = useState<Room[]>([]);
@@ -28,69 +26,88 @@ export const AdminView: React.FC = () => {
   const seedData = async () => {
     try {
       // Seed Rooms
-      const roomsData = [
-        { name: 'Sanctuary', capacity: 500, description: 'Main worship hall with high-end audio.', imageUrl: 'https://picsum.photos/seed/sanctuary/800/600' },
-        { name: 'Youth Hall', capacity: 100, description: 'Vibrant space for youth activities.', imageUrl: 'https://picsum.photos/seed/youth/800/600' },
-        { name: 'Meeting Room A', capacity: 20, description: 'Quiet space for small group meetings.', imageUrl: 'https://picsum.photos/seed/meeting/800/600' },
-      ];
-      for (const r of roomsData) await addDoc(collection(db, 'rooms'), r);
+      const { error: roomsError } = await supabase.from('rooms').insert([
+        { name: 'Sanctuary', capacity: 500, description: 'Main worship hall with high-end audio.', image_url: 'https://picsum.photos/seed/sanctuary/800/600' },
+        { name: 'Youth Hall', capacity: 100, description: 'Vibrant space for youth activities.', image_url: 'https://picsum.photos/seed/youth/800/600' },
+        { name: 'Meeting Room A', capacity: 20, description: 'Quiet space for small group meetings.', image_url: 'https://picsum.photos/seed/meeting/800/600' },
+      ]);
+      if (roomsError) throw roomsError;
 
       // Seed Media
-      const mediaData = [
-        { title: 'Sunday Service - Hope', type: 'video', url: 'https://example.com/video1', description: 'A powerful message about finding hope in difficult times.', category: 'Sermon', createdAt: new Date().toISOString() },
-        { title: 'Worship Set - Morning Grace', type: 'audio', url: 'https://example.com/audio1', description: 'Morning worship session with the choir.', category: 'Worship', createdAt: new Date().toISOString() },
-      ];
-      for (const m of mediaData) await addDoc(collection(db, 'media'), m);
+      const { error: mediaError } = await supabase.from('media').insert([
+        { title: 'Sunday Service - Hope', type: 'video', url: 'https://example.com/video1', description: 'A powerful message about finding hope in difficult times.', category: 'Sermon', created_at: new Date().toISOString() },
+        { title: 'Worship Set - Morning Grace', type: 'audio', url: 'https://example.com/audio1', description: 'Morning worship session with the choir.', category: 'Worship', created_at: new Date().toISOString() },
+      ]);
+      if (mediaError) throw mediaError;
 
       // Seed Worksheet
-      const worksheetData = [
-        { name: 'John Doe', lastFourDigits: '1234' },
-        { name: 'Jane Smith', lastFourDigits: '5678' },
-        { name: 'Alice Johnson', lastFourDigits: '9012' },
-      ];
-      for (const w of worksheetData) await addDoc(collection(db, 'worksheet'), w);
+      const { error: worksheetError } = await supabase.from('worksheet').insert([
+        { name: 'John Doe', last_four_digits: '1234' },
+        { name: 'Jane Smith', last_four_digits: '5678' },
+        { name: 'Alice Johnson', last_four_digits: '9012' },
+      ]);
+      if (worksheetError) throw worksheetError;
 
       toast.success("Demo data seeded successfully!");
     } catch (error) {
+      console.error("Seed error:", error);
       toast.error("Failed to seed data.");
     }
   };
 
-  // ... rest of the component ...
-
   // Form states
-  const [newRoom, setNewRoom] = useState({ name: '', capacity: 0, description: '', imageUrl: '' });
+  const [newRoom, setNewRoom] = useState({ name: '', capacity: 0, description: '', image_url: '' });
   const [newMedia, setNewMedia] = useState({ title: '', type: 'video' as any, url: '', description: '', category: '' });
-  const [newWorksheet, setNewWorksheet] = useState({ name: '', lastFourDigits: '' });
+  const [newWorksheet, setNewWorksheet] = useState({ name: '', last_four_digits: '' });
 
   useEffect(() => {
-    const unsubUsers = onSnapshot(collection(db, 'users'), (snap) => {
-      setUsers(snap.docs.map(doc => ({ uid: doc.id, ...doc.data() } as UserProfile)));
-    });
-    const unsubBookings = onSnapshot(collection(db, 'bookings'), (snap) => {
-      setBookings(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Booking)));
-    });
-    const unsubRooms = onSnapshot(collection(db, 'rooms'), (snap) => {
-      setRooms(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Room)));
-    });
-    const unsubMedia = onSnapshot(collection(db, 'media'), (snap) => {
-      setMedia(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as MediaItem)));
-    });
-    const unsubWorksheet = onSnapshot(collection(db, 'worksheet'), (snap) => {
-      setWorksheet(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as WorksheetEntry)));
-    });
-    const unsubAttendance = onSnapshot(collection(db, 'attendance'), (snap) => {
-      setAttendance(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as AttendanceRecord)));
-    });
+    // Fetch initial data for all tables
+    const fetchAll = async () => {
+      const [usersRes, bookingsRes, roomsRes, mediaRes, worksheetRes, attendanceRes] = await Promise.all([
+        supabase.from('users').select('*'),
+        supabase.from('bookings').select('*'),
+        supabase.from('rooms').select('*'),
+        supabase.from('media').select('*'),
+        supabase.from('worksheet').select('*'),
+        supabase.from('attendance').select('*'),
+      ]);
+      if (usersRes.data) setUsers(usersRes.data as UserProfile[]);
+      if (bookingsRes.data) setBookings(bookingsRes.data as Booking[]);
+      if (roomsRes.data) setRooms(roomsRes.data as Room[]);
+      if (mediaRes.data) setMedia(mediaRes.data as MediaItem[]);
+      if (worksheetRes.data) setWorksheet(worksheetRes.data as WorksheetEntry[]);
+      if (attendanceRes.data) setAttendance(attendanceRes.data as AttendanceRecord[]);
+    };
+    fetchAll();
+
+    // Real-time subscriptions for all tables
+    const channels = [
+      { name: 'admin-users', table: 'users', setter: setUsers },
+      { name: 'admin-bookings', table: 'bookings', setter: setBookings },
+      { name: 'admin-rooms', table: 'rooms', setter: setRooms },
+      { name: 'admin-media', table: 'media', setter: setMedia },
+      { name: 'admin-worksheet', table: 'worksheet', setter: setWorksheet },
+      { name: 'admin-attendance', table: 'attendance', setter: setAttendance },
+    ].map(({ name, table, setter }) =>
+      supabase
+        .channel(name)
+        .on('postgres_changes', { event: '*', schema: 'public', table }, () => {
+          supabase.from(table).select('*').then(({ data }) => {
+            if (data) setter(data as any);
+          });
+        })
+        .subscribe()
+    );
 
     return () => {
-      unsubUsers(); unsubBookings(); unsubRooms(); unsubMedia(); unsubWorksheet(); unsubAttendance();
+      channels.forEach((ch) => supabase.removeChannel(ch));
     };
   }, []);
 
   const handleUpdateUserRole = async (uid: string, role: string) => {
     try {
-      await updateDoc(doc(db, 'users', uid), { role });
+      const { error } = await supabase.from('users').update({ role }).eq('uid', uid);
+      if (error) throw error;
       toast.success("User role updated.");
     } catch (error) {
       toast.error("Failed to update role.");
@@ -99,7 +116,8 @@ export const AdminView: React.FC = () => {
 
   const handleBookingAction = async (id: string, status: 'approved' | 'rejected') => {
     try {
-      await updateDoc(doc(db, 'bookings', id), { status });
+      const { error } = await supabase.from('bookings').update({ status }).eq('id', id);
+      if (error) throw error;
       toast.success(`Booking ${status}.`);
     } catch (error) {
       toast.error("Failed to update booking.");
@@ -108,9 +126,10 @@ export const AdminView: React.FC = () => {
 
   const handleAddRoom = async () => {
     try {
-      await addDoc(collection(db, 'rooms'), newRoom);
+      const { error } = await supabase.from('rooms').insert(newRoom);
+      if (error) throw error;
       toast.success("Room added.");
-      setNewRoom({ name: '', capacity: 0, description: '', imageUrl: '' });
+      setNewRoom({ name: '', capacity: 0, description: '', image_url: '' });
     } catch (error) {
       toast.error("Failed to add room.");
     }
@@ -118,7 +137,8 @@ export const AdminView: React.FC = () => {
 
   const handleAddMedia = async () => {
     try {
-      await addDoc(collection(db, 'media'), { ...newMedia, createdAt: new Date().toISOString() });
+      const { error } = await supabase.from('media').insert({ ...newMedia, created_at: new Date().toISOString() });
+      if (error) throw error;
       toast.success("Media added.");
       setNewMedia({ title: '', type: 'video', url: '', description: '', category: '' });
     } catch (error) {
@@ -128,18 +148,21 @@ export const AdminView: React.FC = () => {
 
   const handleAddWorksheet = async () => {
     try {
-      await addDoc(collection(db, 'worksheet'), newWorksheet);
+      const { error } = await supabase.from('worksheet').insert(newWorksheet);
+      if (error) throw error;
       toast.success("Worksheet entry added.");
-      setNewWorksheet({ name: '', lastFourDigits: '' });
+      setNewWorksheet({ name: '', last_four_digits: '' });
     } catch (error) {
       toast.error("Failed to add worksheet entry.");
     }
   };
 
-  const handleDelete = async (coll: string, id: string) => {
+  const handleDelete = async (table: string, id: string) => {
     if (!confirm("Are you sure you want to delete this?")) return;
     try {
-      await deleteDoc(doc(db, coll, id));
+      const column = table === 'users' ? 'uid' : 'id';
+      const { error } = await supabase.from(table).delete().eq(column, id);
+      if (error) throw error;
       toast.success("Deleted successfully.");
     } catch (error) {
       toast.error("Failed to delete.");
@@ -193,9 +216,9 @@ export const AdminView: React.FC = () => {
                 <TableBody>
                   {bookings.map((booking) => (
                     <TableRow key={booking.id}>
-                      <TableCell className="font-medium">{booking.userName}</TableCell>
-                      <TableCell>{booking.roomName}</TableCell>
-                      <TableCell>{format(new Date(booking.startTime), "MMM d, p")}</TableCell>
+                      <TableCell className="font-medium">{booking.user_name}</TableCell>
+                      <TableCell>{booking.room_name}</TableCell>
+                      <TableCell>{format(new Date(booking.start_time), "MMM d, p")}</TableCell>
                       <TableCell>{booking.purpose}</TableCell>
                       <TableCell>
                         <Badge variant={booking.status === 'approved' ? 'default' : booking.status === 'rejected' ? 'destructive' : 'secondary'}>
@@ -290,7 +313,7 @@ export const AdminView: React.FC = () => {
                   <TableBody>
                     {worksheet.map((entry) => (
                       <TableRow key={entry.id}>
-                        <TableCell className="font-mono font-bold">{entry.lastFourDigits}</TableCell>
+                        <TableCell className="font-mono font-bold">{entry.last_four_digits}</TableCell>
                         <TableCell>{entry.name}</TableCell>
                         <TableCell className="text-right">
                           <Button size="sm" variant="ghost" onClick={() => handleDelete('worksheet', entry.id)}>
@@ -315,7 +338,7 @@ export const AdminView: React.FC = () => {
                 </div>
                 <div className="space-y-2">
                   <Label>Last 4 Digits</Label>
-                  <Input maxLength={4} value={newWorksheet.lastFourDigits} onChange={(e) => setNewWorksheet({...newWorksheet, lastFourDigits: e.target.value})} />
+                  <Input maxLength={4} value={newWorksheet.last_four_digits} onChange={(e) => setNewWorksheet({...newWorksheet, last_four_digits: e.target.value})} />
                 </div>
               </CardContent>
               <CardFooter>
@@ -339,9 +362,9 @@ export const AdminView: React.FC = () => {
                         <CardTitle className="text-lg">{room.name}</CardTitle>
                         <CardDescription>Capacity: {room.capacity}</CardDescription>
                       </CardHeader>
-                      <Button 
-                        variant="destructive" 
-                        size="sm" 
+                      <Button
+                        variant="destructive"
+                        size="sm"
                         className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity"
                         onClick={() => handleDelete('rooms', room.id)}
                       >

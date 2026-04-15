@@ -1,12 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { auth, db } from '../lib/firebase';
-import { onAuthStateChanged, signInWithPopup, GoogleAuthProvider, signOut, User } from 'firebase/auth';
-import { doc, getDoc, setDoc, onSnapshot } from 'firebase/firestore';
+import { supabase } from '../lib/supabase';
 import { UserProfile, UserRole } from '../types';
 import { Button } from './ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from './ui/card';
-import { LogIn, LogOut, Church } from 'lucide-react';
+import { LogIn, Church } from 'lucide-react';
 import { toast } from 'sonner';
+import type { User } from '@supabase/supabase-js';
 
 interface AuthContextType {
   user: User | null;
@@ -30,61 +29,124 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-      setUser(firebaseUser);
-      if (firebaseUser) {
-        // Fetch or create profile
-        const profileRef = doc(db, 'users', firebaseUser.uid);
-        
-        // Use onSnapshot for real-time profile updates
-        const unsubProfile = onSnapshot(profileRef, (doc) => {
-          if (doc.exists()) {
-            setProfile(doc.data() as UserProfile);
-          } else {
-            // Create default profile
-            const newProfile: UserProfile = {
-              uid: firebaseUser.uid,
-              name: firebaseUser.displayName || 'User',
-              email: firebaseUser.email || '',
-              role: 'public',
-              createdAt: new Date().toISOString(),
-            };
-            setDoc(profileRef, newProfile);
-            setProfile(newProfile);
-          }
-          setLoading(false);
-        }, (error) => {
-          console.error("Profile snapshot error:", error);
-          setLoading(false);
-        });
-        return () => unsubProfile();
+    // Get initial session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      const currentUser = session?.user ?? null;
+      setUser(currentUser);
+      if (currentUser) {
+        fetchOrCreateProfile(currentUser);
       } else {
-        setProfile(null);
         setLoading(false);
       }
     });
 
-    return () => unsubscribe();
+    // Listen for auth state changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (_event, session) => {
+        const currentUser = session?.user ?? null;
+        setUser(currentUser);
+        if (currentUser) {
+          fetchOrCreateProfile(currentUser);
+        } else {
+          setProfile(null);
+          setLoading(false);
+        }
+      }
+    );
+
+    return () => {
+      subscription.unsubscribe();
+    };
   }, []);
+
+  // Subscribe to real-time profile updates when user changes
+  useEffect(() => {
+    if (!user) return;
+
+    const channel = supabase
+      .channel(`profile-${user.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'users',
+          filter: `uid=eq.${user.id}`,
+        },
+        (payload) => {
+          if (payload.eventType === 'DELETE') {
+            setProfile(null);
+          } else {
+            setProfile(payload.new as UserProfile);
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user?.id]);
+
+  const fetchOrCreateProfile = async (authUser: User) => {
+    try {
+      const { data, error } = await supabase
+        .from('users')
+        .select('*')
+        .eq('uid', authUser.id)
+        .single();
+
+      if (error && error.code === 'PGRST116') {
+        // Profile not found — create a new one
+        const newProfile: UserProfile = {
+          uid: authUser.id,
+          name: authUser.user_metadata?.full_name || authUser.email || 'User',
+          email: authUser.email || '',
+          role: 'public',
+          created_at: new Date().toISOString(),
+        };
+        const { error: insertError } = await supabase
+          .from('users')
+          .insert(newProfile);
+        if (insertError) {
+          console.error('Profile creation error:', insertError);
+          toast.error('Failed to create profile.');
+        }
+        setProfile(newProfile);
+      } else if (error) {
+        console.error('Profile fetch error:', error);
+      } else {
+        setProfile(data as UserProfile);
+      }
+    } catch (err) {
+      console.error('Profile error:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const signIn = async () => {
     try {
-      const provider = new GoogleAuthProvider();
-      await signInWithPopup(auth, provider);
-      toast.success("Successfully signed in!");
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: window.location.origin,
+        },
+      });
+      if (error) throw error;
     } catch (error) {
-      console.error("Sign in error:", error);
-      toast.error("Failed to sign in.");
+      console.error('Sign in error:', error);
+      toast.error('Failed to sign in.');
     }
   };
 
   const logout = async () => {
     try {
-      await signOut(auth);
-      toast.success("Signed out successfully.");
+      await supabase.auth.signOut();
+      toast.success('Signed out successfully.');
     } catch (error) {
-      console.error("Logout error:", error);
-      toast.error("Failed to sign out.");
+      console.error('Logout error:', error);
+      toast.error('Failed to sign out.');
     }
   };
 

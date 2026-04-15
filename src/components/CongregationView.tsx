@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useContext } from 'react';
-import { db } from '../lib/firebase';
-import { collection, addDoc, query, where, onSnapshot, getDocs, limit } from 'firebase/firestore';
+import { supabase } from '../lib/supabase';
 import { AuthContext } from './Auth';
 import { Room, Booking, AttendanceRecord, WorksheetEntry } from '../types';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from './ui/card';
@@ -24,11 +23,11 @@ export const CongregationView: React.FC = () => {
   const [rooms, setRooms] = useState<Room[]>([]);
   const [myBookings, setMyBookings] = useState<Booking[]>([]);
   const [myAttendance, setMyAttendance] = useState<AttendanceRecord[]>([]);
-  
+
   // Roll Call State
   const [lastFour, setLastFour] = useState('');
   const [isCheckingRoll, setIsCheckingRoll] = useState(false);
-  
+
   // Booking State
   const [selectedRoom, setSelectedRoom] = useState<Room | null>(null);
   const [bookingDate, setBookingDate] = useState<Date | undefined>(new Date());
@@ -37,27 +36,57 @@ export const CongregationView: React.FC = () => {
   useEffect(() => {
     if (!profile) return;
 
-    // Fetch Rooms
-    const unsubRooms = onSnapshot(collection(db, 'rooms'), (snapshot) => {
-      setRooms(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Room)));
-    });
+    // Fetch initial data
+    const fetchData = async () => {
+      const [roomsRes, bookingsRes, attendanceRes] = await Promise.all([
+        supabase.from('rooms').select('*'),
+        supabase.from('bookings').select('*').eq('user_id', profile.uid),
+        supabase.from('attendance').select('*').eq('user_id', profile.uid),
+      ]);
+      if (roomsRes.data) setRooms(roomsRes.data as Room[]);
+      if (bookingsRes.data) setMyBookings(bookingsRes.data as Booking[]);
+      if (attendanceRes.data) setMyAttendance(attendanceRes.data as AttendanceRecord[]);
+    };
+    fetchData();
 
-    // Fetch My Bookings
-    const qBookings = query(collection(db, 'bookings'), where('userId', '==', profile.uid));
-    const unsubBookings = onSnapshot(qBookings, (snapshot) => {
-      setMyBookings(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Booking)));
-    });
+    // Real-time subscriptions
+    const roomsChannel = supabase
+      .channel('congregation-rooms')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'rooms' }, () => {
+        supabase.from('rooms').select('*').then(({ data }) => {
+          if (data) setRooms(data as Room[]);
+        });
+      })
+      .subscribe();
 
-    // Fetch My Attendance
-    const qAttendance = query(collection(db, 'attendance'), where('userId', '==', profile.uid));
-    const unsubAttendance = onSnapshot(qAttendance, (snapshot) => {
-      setMyAttendance(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as AttendanceRecord)));
-    });
+    const bookingsChannel = supabase
+      .channel('congregation-bookings')
+      .on('postgres_changes', {
+        event: '*', schema: 'public', table: 'bookings',
+        filter: `user_id=eq.${profile.uid}`,
+      }, () => {
+        supabase.from('bookings').select('*').eq('user_id', profile.uid).then(({ data }) => {
+          if (data) setMyBookings(data as Booking[]);
+        });
+      })
+      .subscribe();
+
+    const attendanceChannel = supabase
+      .channel('congregation-attendance')
+      .on('postgres_changes', {
+        event: '*', schema: 'public', table: 'attendance',
+        filter: `user_id=eq.${profile.uid}`,
+      }, () => {
+        supabase.from('attendance').select('*').eq('user_id', profile.uid).then(({ data }) => {
+          if (data) setMyAttendance(data as AttendanceRecord[]);
+        });
+      })
+      .subscribe();
 
     return () => {
-      unsubRooms();
-      unsubBookings();
-      unsubAttendance();
+      supabase.removeChannel(roomsChannel);
+      supabase.removeChannel(bookingsChannel);
+      supabase.removeChannel(attendanceChannel);
     };
   }, [profile]);
 
@@ -70,43 +99,47 @@ export const CongregationView: React.FC = () => {
     setIsCheckingRoll(true);
     try {
       // 1. Check Worksheet for mapping
-      const qWorksheet = query(collection(db, 'worksheet'), where('lastFourDigits', '==', lastFour), limit(1));
-      const worksheetSnap = await getDocs(qWorksheet);
-      
-      if (worksheetSnap.empty) {
+      const { data: worksheetData, error: worksheetError } = await supabase
+        .from('worksheet')
+        .select('*')
+        .eq('last_four_digits', lastFour)
+        .limit(1);
+
+      if (worksheetError || !worksheetData || worksheetData.length === 0) {
         toast.error("No record found for these digits in the worksheet.");
         setIsCheckingRoll(false);
         return;
       }
 
-      const entry = worksheetSnap.docs[0].data() as WorksheetEntry;
-      
+      const entry = worksheetData[0] as WorksheetEntry;
+
       // 2. Verify if it matches user's name (basic check)
-      // In a real app, you'd have more robust logic here
       toast.info(`Found record for: ${entry.name}`);
 
       // 3. Record Attendance
       const today = format(new Date(), 'yyyy-MM-dd');
-      
+
       // Check if already recorded today
-      const qToday = query(
-        collection(db, 'attendance'), 
-        where('userId', '==', profile.uid),
-        where('date', '==', today)
-      );
-      const todaySnap = await getDocs(qToday);
-      
-      if (!todaySnap.empty) {
+      const { data: todayData } = await supabase
+        .from('attendance')
+        .select('id')
+        .eq('user_id', profile.uid)
+        .eq('date', today);
+
+      if (todayData && todayData.length > 0) {
         toast.warning("Attendance already recorded for today.");
       } else {
-        await addDoc(collection(db, 'attendance'), {
-          userId: profile.uid,
-          userName: profile.name,
-          date: today,
-          lastFourDigits: lastFour,
-          status: 'present',
-          createdAt: new Date().toISOString()
-        });
+        const { error: insertError } = await supabase
+          .from('attendance')
+          .insert({
+            user_id: profile.uid,
+            user_name: profile.name,
+            date: today,
+            last_four_digits: lastFour,
+            status: 'present',
+            created_at: new Date().toISOString(),
+          });
+        if (insertError) throw insertError;
         toast.success("Roll call successful! Welcome.");
       }
       setLastFour('');
@@ -125,17 +158,18 @@ export const CongregationView: React.FC = () => {
     }
 
     try {
-      await addDoc(collection(db, 'bookings'), {
-        roomId: selectedRoom.id,
-        roomName: selectedRoom.name,
-        userId: profile.uid,
-        userName: profile.name,
-        startTime: bookingDate.toISOString(),
-        endTime: new Date(bookingDate.getTime() + 2 * 60 * 60 * 1000).toISOString(), // Default 2 hours
+      const { error } = await supabase.from('bookings').insert({
+        room_id: selectedRoom.id,
+        room_name: selectedRoom.name,
+        user_id: profile.uid,
+        user_name: profile.name,
+        start_time: bookingDate.toISOString(),
+        end_time: new Date(bookingDate.getTime() + 2 * 60 * 60 * 1000).toISOString(), // Default 2 hours
         status: 'pending',
         purpose: bookingPurpose,
-        createdAt: new Date().toISOString()
+        created_at: new Date().toISOString(),
       });
+      if (error) throw error;
       toast.success("Booking request submitted!");
       setSelectedRoom(null);
       setBookingPurpose('');
@@ -184,9 +218,9 @@ export const CongregationView: React.FC = () => {
             <CardContent className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="digits">Last 4 Digits</Label>
-                <Input 
-                  id="digits" 
-                  placeholder="e.g. 1234" 
+                <Input
+                  id="digits"
+                  placeholder="e.g. 1234"
                   maxLength={4}
                   value={lastFour}
                   onChange={(e) => setLastFour(e.target.value.replace(/\D/g, ''))}
@@ -195,8 +229,8 @@ export const CongregationView: React.FC = () => {
               </div>
             </CardContent>
             <CardFooter>
-              <Button 
-                className="w-full h-12 text-lg" 
+              <Button
+                className="w-full h-12 text-lg"
                 onClick={handleRollCall}
                 disabled={isCheckingRoll || lastFour.length !== 4}
               >
@@ -212,8 +246,8 @@ export const CongregationView: React.FC = () => {
               <h3 className="text-xl font-bold">Select a Room</h3>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 {rooms.map((room) => (
-                  <Card 
-                    key={room.id} 
+                  <Card
+                    key={room.id}
                     className={`cursor-pointer transition-all ${selectedRoom?.id === room.id ? 'ring-2 ring-primary bg-primary/5' : 'hover:bg-muted/50'}`}
                     onClick={() => setSelectedRoom(room)}
                   >
@@ -245,9 +279,9 @@ export const CongregationView: React.FC = () => {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="purpose">Purpose</Label>
-                  <Input 
-                    id="purpose" 
-                    placeholder="e.g. Choir practice" 
+                  <Input
+                    id="purpose"
+                    placeholder="e.g. Choir practice"
                     value={bookingPurpose}
                     onChange={(e) => setBookingPurpose(e.target.value)}
                   />
@@ -274,8 +308,8 @@ export const CongregationView: React.FC = () => {
                   <Card key={booking.id}>
                     <CardContent className="p-4 flex justify-between items-center">
                       <div>
-                        <p className="font-bold">{booking.roomName}</p>
-                        <p className="text-xs text-muted-foreground">{format(new Date(booking.startTime), "PPP p")}</p>
+                        <p className="font-bold">{booking.room_name}</p>
+                        <p className="text-xs text-muted-foreground">{format(new Date(booking.start_time), "PPP p")}</p>
                       </div>
                       <Badge variant={booking.status === 'approved' ? 'default' : booking.status === 'rejected' ? 'destructive' : 'secondary'}>
                         {booking.status}
@@ -297,7 +331,7 @@ export const CongregationView: React.FC = () => {
                     <CardContent className="p-4 flex justify-between items-center">
                       <div>
                         <p className="font-bold">{format(new Date(record.date), "EEEE, MMM do")}</p>
-                        <p className="text-xs text-muted-foreground">Method: Last 4 Digits ({record.lastFourDigits})</p>
+                        <p className="text-xs text-muted-foreground">Method: Last 4 Digits ({record.last_four_digits})</p>
                       </div>
                       <Badge className="bg-green-500 hover:bg-green-600">Present</Badge>
                     </CardContent>

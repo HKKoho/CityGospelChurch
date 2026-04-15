@@ -5,9 +5,9 @@ export interface UserProfile {
   name: string;
   email: string;
   role: UserRole;
-  lastFourDigits?: string;
+  last_four_digits?: string;
   phone?: string;
-  createdAt: string;
+  created_at: string;
 }
 
 export interface Room {
@@ -15,20 +15,20 @@ export interface Room {
   name: string;
   capacity: number;
   description: string;
-  imageUrl: string;
+  image_url: string;
 }
 
 export interface Booking {
   id: string;
-  roomId: string;
-  userId: string;
-  userName: string;
-  roomName: string;
-  startTime: string;
-  endTime: string;
+  room_id: string;
+  user_id: string;
+  user_name: string;
+  room_name: string;
+  start_time: string;
+  end_time: string;
   status: 'pending' | 'approved' | 'rejected';
   purpose: string;
-  createdAt: string;
+  created_at: string;
 }
 
 export interface MediaItem {
@@ -38,22 +38,22 @@ export interface MediaItem {
   url: string;
   description: string;
   category: string;
-  createdAt: string;
+  created_at: string;
 }
 
 export interface AttendanceRecord {
   id: string;
   date: string;
-  userId: string;
-  userName: string;
-  lastFourDigits: string;
+  user_id: string;
+  user_name: string;
+  last_four_digits: string;
   status: 'present' | 'absent';
-  createdAt: string;
+  created_at: string;
 }
 
 export interface WorksheetEntry {
   id: string;
-  lastFourDigits: string;
+  last_four_digits: string;
   name: string;
-  userId?: string;
+  user_id?: string;
 }

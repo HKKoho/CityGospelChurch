@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { db } from '../lib/firebase';
-import { collection, query, onSnapshot, limit } from 'firebase/firestore';
+import { supabase } from '../lib/supabase';
 import { MediaItem, Room } from '../types';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
@@ -15,19 +14,39 @@ export const PublicView: React.FC = () => {
   const [rooms, setRooms] = useState<Room[]>([]);
 
   useEffect(() => {
-    const qMedia = query(collection(db, 'media'), limit(6));
-    const unsubMedia = onSnapshot(qMedia, (snapshot) => {
-      setMedia(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as MediaItem)));
-    });
+    // Fetch initial data
+    const fetchData = async () => {
+      const [mediaRes, roomsRes] = await Promise.all([
+        supabase.from('media').select('*').limit(6),
+        supabase.from('rooms').select('*').limit(4),
+      ]);
+      if (mediaRes.data) setMedia(mediaRes.data as MediaItem[]);
+      if (roomsRes.data) setRooms(roomsRes.data as Room[]);
+    };
+    fetchData();
 
-    const qRooms = query(collection(db, 'rooms'), limit(4));
-    const unsubRooms = onSnapshot(qRooms, (snapshot) => {
-      setRooms(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Room)));
-    });
+    // Subscribe to real-time changes
+    const mediaChannel = supabase
+      .channel('public-media')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'media' }, () => {
+        supabase.from('media').select('*').limit(6).then(({ data }) => {
+          if (data) setMedia(data as MediaItem[]);
+        });
+      })
+      .subscribe();
+
+    const roomsChannel = supabase
+      .channel('public-rooms')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'rooms' }, () => {
+        supabase.from('rooms').select('*').limit(4).then(({ data }) => {
+          if (data) setRooms(data as Room[]);
+        });
+      })
+      .subscribe();
 
     return () => {
-      unsubMedia();
-      unsubRooms();
+      supabase.removeChannel(mediaChannel);
+      supabase.removeChannel(roomsChannel);
     };
   }, []);
 
@@ -36,16 +55,16 @@ export const PublicView: React.FC = () => {
       {/* Hero Section */}
       <section className="relative h-[60vh] flex items-center justify-center overflow-hidden rounded-3xl mt-6">
         <div className="absolute inset-0 z-0">
-          <img 
-            src="https://picsum.photos/seed/church/1920/1080" 
-            alt="Hero" 
+          <img
+            src="https://picsum.photos/seed/church/1920/1080"
+            alt="Hero"
             className="w-full h-full object-cover opacity-60"
             referrerPolicy="no-referrer"
           />
           <div className="absolute inset-0 bg-gradient-to-t from-background via-background/20 to-transparent" />
         </div>
-        
-        <motion.div 
+
+        <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           className="relative z-10 text-center space-y-4 px-4"
@@ -54,7 +73,7 @@ export const PublicView: React.FC = () => {
             Welcome to <span className="text-primary">Ecclesia</span>
           </h1>
           <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
-            A contemporary space for community, worship, and growth. 
+            A contemporary space for community, worship, and growth.
             Explore our media library and book spaces for your gatherings.
           </p>
         </motion.div>
@@ -80,8 +99,8 @@ export const PublicView: React.FC = () => {
             >
               <Card className="overflow-hidden hover:shadow-lg transition-all group">
                 <div className="relative aspect-video bg-muted">
-                  <img 
-                    src={item.type === 'video' ? `https://picsum.photos/seed/${item.id}/800/450` : item.url} 
+                  <img
+                    src={item.type === 'video' ? `https://picsum.photos/seed/${item.id}/800/450` : item.url}
                     alt={item.title}
                     className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                     referrerPolicy="no-referrer"
@@ -121,8 +140,8 @@ export const PublicView: React.FC = () => {
           {rooms.map((room) => (
             <Card key={room.id} className="flex flex-col md:flex-row overflow-hidden border-none shadow-none bg-muted/30">
               <div className="w-full md:w-1/2 aspect-video md:aspect-auto">
-                <img 
-                  src={room.imageUrl || `https://picsum.photos/seed/${room.id}/600/400`} 
+                <img
+                  src={room.image_url || `https://picsum.photos/seed/${room.id}/600/400`}
                   alt={room.name}
                   className="w-full h-full object-cover"
                   referrerPolicy="no-referrer"
