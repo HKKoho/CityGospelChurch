@@ -1,0 +1,118 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "A user of the system, can be admin, congregation, or public.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "role": { "type": "string", "enum": ["admin", "congregation", "public"] },
+        "lastFourDigits": { "type": "string", "description": "Last four digits of phone or ID for roll call" },
+        "phone": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "name", "email", "role"]
+    },
+    "Booking": {
+      "title": "Booking",
+      "description": "A room booking request.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "roomId": { "type": "string" },
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "roomName": { "type": "string" },
+        "startTime": { "type": "string", "format": "date-time" },
+        "endTime": { "type": "string", "format": "date-time" },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected"] },
+        "purpose": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["roomId", "userId", "startTime", "endTime", "status"]
+    },
+    "Room": {
+      "title": "Room",
+      "description": "A room available for booking.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "capacity": { "type": "number" },
+        "description": { "type": "string" },
+        "imageUrl": { "type": "string" }
+      },
+      "required": ["name", "capacity"]
+    },
+    "Media": {
+      "title": "Media",
+      "description": "Embedded media content.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "type": { "type": "string", "enum": ["video", "audio", "image"] },
+        "url": { "type": "string" },
+        "description": { "type": "string" },
+        "category": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "type", "url"]
+    },
+    "Attendance": {
+      "title": "Attendance",
+      "description": "Roll call record.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "date": { "type": "string", "format": "date" },
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "lastFourDigits": { "type": "string" },
+        "status": { "type": "string", "enum": ["present", "absent"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["date", "userId", "status"]
+    },
+    "Worksheet": {
+      "title": "Worksheet",
+      "description": "Mapping of last four digits to names for roll call verification.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "lastFourDigits": { "type": "string" },
+        "name": { "type": "string" },
+        "userId": { "type": "string", "description": "Optional link to a registered user" }
+      },
+      "required": ["lastFourDigits", "name"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profiles"
+    },
+    "/bookings/{bookingId}": {
+      "schema": "Booking",
+      "description": "Room booking requests"
+    },
+    "/rooms/{roomId}": {
+      "schema": "Room",
+      "description": "Available rooms"
+    },
+    "/media/{mediaId}": {
+      "schema": "Media",
+      "description": "Media library"
+    },
+    "/attendance/{attendanceId}": {
+      "schema": "Attendance",
+      "description": "Attendance records"
+    },
+    "/worksheet/{worksheetId}": {
+      "schema": "Worksheet",
+      "description": "Roll call mapping worksheet"
+    }
+  }
+}
