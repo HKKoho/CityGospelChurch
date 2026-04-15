@@ -30,8 +30,8 @@ A church community management platform for **City Gospel Church**. Three user ro
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────┐
-│                   Client (Browser)               │
+┌────────────────────────────────────────────-────-─┐
+│                   Client (Browser)                │
 │                                                   │
 │  React 19 + TypeScript + Tailwind CSS 4           │
 │  Tab-based routing: Public | Congregation | Admin │
@@ -39,19 +39,19 @@ A church community management platform for **City Gospel Church**. Three user ro
 │  Supabase Client ── PostgreSQL (real-time sync)   │
 │  Supabase Client ── Auth (Google OAuth)           │
 │  fetch()         ── /api/gemini/guidance          │
-└──────────────────────┬───────────────────────────┘
+└──────────────────────┬───────────────────────-────┘
                        │
           ┌────────────┼────────────┐
           ▼                         ▼
-┌──────────────────┐    ┌─────────────────────┐
-│   Supabase       │    │   API Server        │
+┌──────────────────┐    ┌────────────────────-─┐
+│   Supabase       │    │   API Server         │
 │   (hosted or     │    │   (Vercel Serverless │
 │    self-hosted)  │    │    OR Express local) │
-│                  │    │                     │
-│  PostgreSQL DB   │    │  Proxies Gemini     │
-│  Auth service    │    │  calls, keeps API   │
-│  Realtime engine │    │  key private        │
-└──────────────────┘    └──────────┬──────────┘
+│                  │    │                      │
+│  PostgreSQL DB   │    │  Proxies Gemini      │
+│  Auth service    │    │  calls, keeps API    │
+│  Realtime engine │    │  key private         │
+└──────────────────┘    └──────────┬──────────-┘
                                    │
                                    ▼
                            Google Gemini API
