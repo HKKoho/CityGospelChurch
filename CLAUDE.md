@@ -4,18 +4,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Ecclesia Manager — a church community management platform for City Gospel Church. Three user roles (public, congregation, admin) with tab-based navigation, Firebase backend, and Gemini AI integration.
+Ecclesia Manager — a church community management platform for City Gospel Church. Three user roles (public, congregation, admin) with tab-based navigation, Firebase backend, and Gemini AI integration. Deployed on Vercel.
 
 ## Commands
 
 ```bash
-npm run dev          # Start both backend (port 3001) and Vite frontend (port 3000)
-npm run dev:client   # Start Vite frontend only
-npm run dev:server   # Start Express backend only (tsx watch with hot reload)
-npm run build        # Production build via Vite
-npm run preview      # Preview production build locally
-npm run clean        # Remove dist/
-npm run lint         # TypeScript type-check only (tsc --noEmit) — no ESLint/Prettier configured
+npm run dev        # Start Vite dev server on port 3000
+npm run build      # Production build via Vite
+npm run preview    # Preview production build locally
+npm run clean      # Remove dist/
+npm run lint       # TypeScript type-check only (tsc --noEmit) — no ESLint/Prettier configured
 ```
 
 ## Architecture
@@ -24,8 +22,8 @@ npm run lint         # TypeScript type-check only (tsc --noEmit) — no ESLint/P
 - **React 19** + TypeScript, built with **Vite 6**
 - **Tailwind CSS 4** with shadcn/base-ui components (`src/components/ui/`)
 - **Firebase 12**: Auth (Google OAuth only) + Firestore (real-time NoSQL)
-- **Express** backend (`server/index.ts`) proxying Gemini API calls — keeps API key server-side
 - **Gemini AI** (`gemini-3-flash-preview`) for community engagement tips, accessed via `POST /api/gemini/guidance`
+- **Vercel** for hosting — frontend as static build, Gemini endpoint as serverless function
 
 ### Routing & Views
 No React Router — uses tab-based client-side routing via state in `App.tsx > Navigation`. Three views:
@@ -56,13 +54,18 @@ No React Router — uses tab-based client-side routing via state in `App.tsx > N
 
 All type definitions in `src/types.ts`.
 
-### Backend (`server/index.ts`)
-Express server on port 3001 (configurable via `SERVER_PORT`). Vite proxies `/api` requests to it in dev. Gemini API calls are made server-side only — the API key never reaches the client bundle.
+### Serverless API (`api/`)
+Vercel serverless functions in the `api/` directory. Currently one endpoint:
+- `api/gemini/guidance.ts` — `POST /api/gemini/guidance` — proxies Gemini AI calls, keeping the API key server-side only
 
 ### Environment Variables
-- `GEMINI_API_KEY` — used by the backend server only (never exposed to client)
-- `SERVER_PORT` — backend port (default 3001)
+- `GEMINI_API_KEY` — used by serverless function only (set in Vercel dashboard, never exposed to client)
 - `DISABLE_HMR=true` — disables hot module replacement (for AI Studio)
+
+### Deployment
+- **Platform**: Vercel
+- **Config**: `vercel.json` — builds with Vite, outputs to `dist/`, rewrites `/api/*` to serverless functions and everything else to `index.html`
+- **Environment**: Set `GEMINI_API_KEY` in Vercel project settings > Environment Variables
 
 ### Path Alias
 `@/*` maps to `./src/*` (configured in both `tsconfig.json` and `vite.config.ts`).

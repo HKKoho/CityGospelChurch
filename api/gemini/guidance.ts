@@ -1,27 +1,20 @@
-import express from 'express';
+import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { GoogleGenAI } from '@google/genai';
-import dotenv from 'dotenv';
 
-dotenv.config();
+export default async function handler(req: VercelRequest, res: VercelResponse) {
+  if (req.method !== 'POST') {
+    res.status(405).json({ error: 'Method not allowed' });
+    return;
+  }
 
-const app = express();
-app.use(express.json());
-
-const PORT = process.env.SERVER_PORT || 3001;
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-
-if (!GEMINI_API_KEY) {
-  console.error('GEMINI_API_KEY is not set. Gemini endpoints will return 503.');
-}
-
-app.post('/api/gemini/guidance', async (_req, res) => {
-  if (!GEMINI_API_KEY) {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
     res.status(503).json({ error: 'Gemini API is not configured.' });
     return;
   }
 
   try {
-    const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
+    const ai = new GoogleGenAI({ apiKey });
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
       contents:
@@ -37,8 +30,4 @@ app.post('/api/gemini/guidance', async (_req, res) => {
     console.error('Gemini API error:', error);
     res.status(500).json({ error: 'Failed to generate guidance.' });
   }
-});
-
-app.listen(PORT, () => {
-  console.log(`Backend server running on port ${PORT}`);
-});
+}
