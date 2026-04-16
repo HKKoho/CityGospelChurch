@@ -110,7 +110,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           .insert(newProfile);
         if (insertError) {
           console.error('Profile creation error:', insertError);
-          toast.error('Failed to create profile.');
+          toast.error('建立個人資料失敗。');
         }
         setProfile(newProfile);
       } else if (error) {
@@ -136,17 +136,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (error) throw error;
     } catch (error) {
       console.error('Sign in error:', error);
-      toast.error('Failed to sign in.');
+      toast.error('登入失敗。');
     }
   };
 
   const logout = async () => {
     try {
       await supabase.auth.signOut();
-      toast.success('Signed out successfully.');
+      toast.success('已成功登出。');
     } catch (error) {
       console.error('Logout error:', error);
-      toast.error('Failed to sign out.');
+      toast.error('登出失敗。');
     }
   };
 
@@ -160,28 +160,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 export const AuthGuard: React.FC<{ children: React.ReactNode; allowedRoles?: UserRole[] }> = ({ children, allowedRoles }) => {
   const { profile, loading, signIn } = React.useContext(AuthContext);
 
-  if (loading) return <div className="flex items-center justify-center h-screen">Loading...</div>;
+  if (loading) return <div className="flex items-center justify-center h-screen">載入中...</div>;
 
   if (!profile) {
     return (
       <div className="flex flex-col items-center justify-center h-screen space-y-6 bg-muted/30">
         <div className="flex items-center space-x-3 mb-4">
           <Church className="w-12 h-12 text-primary" />
-          <h1 className="text-4xl font-heading font-bold">Ecclesia</h1>
+          <h1 className="text-4xl font-heading font-bold">城市福音教會</h1>
         </div>
         <Card className="w-full max-w-md glass-card">
           <CardHeader>
-            <CardTitle>Welcome to Ecclesia Manager</CardTitle>
-            <CardDescription>Please sign in to access the platform features.</CardDescription>
+            <CardTitle>歡迎來到城市福音教會</CardTitle>
+            <CardDescription>請登入以使用平台功能。</CardDescription>
           </CardHeader>
           <CardContent className="flex justify-center py-6">
             <Button onClick={signIn} size="lg" className="w-full">
               <LogIn className="w-4 h-4 mr-2" />
-              Sign in with Google
+              使用 Google 登入
             </Button>
           </CardContent>
           <CardFooter className="text-xs text-center text-muted-foreground">
-            Access is restricted based on your assigned role.
+            存取權限依據您的指定角色而定。
           </CardFooter>
         </Card>
       </div>
@@ -191,9 +191,9 @@ export const AuthGuard: React.FC<{ children: React.ReactNode; allowedRoles?: Use
   if (allowedRoles && !allowedRoles.includes(profile.role)) {
     return (
       <div className="flex flex-col items-center justify-center h-screen space-y-4">
-        <h2 className="text-2xl font-bold">Access Denied</h2>
-        <p className="text-muted-foreground">You do not have permission to view this section.</p>
-        <Button onClick={() => window.location.href = '/'}>Go Home</Button>
+        <h2 className="text-2xl font-bold">拒絕存取</h2>
+        <p className="text-muted-foreground">您沒有權限檢視此區域。</p>
+        <Button onClick={() => window.location.href = '/'}>回到首頁</Button>
       </div>
     );
   }

@@ -18,7 +18,7 @@ export const GeminiGuidance: React.FC = () => {
       setGuidance(data.text);
     } catch (error) {
       console.error("Gemini error:", error);
-      setGuidance("Failed to generate guidance. Please try again later.");
+      setGuidance("無法產生建議，請稍後再試。");
     } finally {
       setLoading(false);
     }
@@ -31,12 +31,12 @@ export const GeminiGuidance: React.FC = () => {
           <div>
             <CardTitle className="flex items-center gap-2">
               <Sparkles className="w-5 h-5 text-primary" />
-              AI Platform Insights
+              教會 AI 聖經資料查詢助理
             </CardTitle>
-            <CardDescription>Get contemporary guidance on platform management.</CardDescription>
+            <CardDescription>輸入問題，取得 AI 驅動的聖經資料回應。</CardDescription>
           </div>
           <Button onClick={generateGuidance} disabled={loading} size="sm">
-            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Generate Tips"}
+            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "查詢"}
           </Button>
         </div>
       </CardHeader>
@@ -53,7 +53,7 @@ export const GeminiGuidance: React.FC = () => {
             </motion.div>
           ) : (
             <div className="text-center py-8 text-muted-foreground italic">
-              Click the button to generate AI-powered insights for your community.
+              點擊按鈕以產生 AI 驅動的回應。
             </div>
           )}
         </AnimatePresence>

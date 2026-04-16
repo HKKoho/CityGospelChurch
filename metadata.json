@@ -1,6 +1,6 @@
 {
-  "name": "Ecclesia Manager",
-  "description": "A comprehensive church management system for public, congregation, and administration roles, featuring room booking, self-service roll call, and media management.",
+  "name": "城市福音教會管理系統",
+  "description": "一套完整的教會管理系統，支援公開、會眾與管理員角色，提供場地預約、自助點名及媒體管理功能。",
   "requestFramePermissions": [],
   "majorCapabilities": []
 }

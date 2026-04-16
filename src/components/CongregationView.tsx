@@ -92,7 +92,7 @@ export const CongregationView: React.FC = () => {
 
   const handleRollCall = async () => {
     if (!profile || lastFour.length !== 4) {
-      toast.error("Please enter exactly 4 digits.");
+      toast.error("請輸入正好 4 位數字。");
       return;
     }
 
@@ -106,7 +106,7 @@ export const CongregationView: React.FC = () => {
         .limit(1);
 
       if (worksheetError || !worksheetData || worksheetData.length === 0) {
-        toast.error("No record found for these digits in the worksheet.");
+        toast.error("在工作表中找不到此號碼的記錄。");
         setIsCheckingRoll(false);
         return;
       }
@@ -114,7 +114,7 @@ export const CongregationView: React.FC = () => {
       const entry = worksheetData[0] as WorksheetEntry;
 
       // 2. Verify if it matches user's name (basic check)
-      toast.info(`Found record for: ${entry.name}`);
+      toast.info(`找到記錄：${entry.name}`);
 
       // 3. Record Attendance
       const today = format(new Date(), 'yyyy-MM-dd');
@@ -127,7 +127,7 @@ export const CongregationView: React.FC = () => {
         .eq('date', today);
 
       if (todayData && todayData.length > 0) {
-        toast.warning("Attendance already recorded for today.");
+        toast.warning("今日出席已記錄。");
       } else {
         const { error: insertError } = await supabase
           .from('attendance')
@@ -140,12 +140,12 @@ export const CongregationView: React.FC = () => {
             created_at: new Date().toISOString(),
           });
         if (insertError) throw insertError;
-        toast.success("Roll call successful! Welcome.");
+        toast.success("點名成功！歡迎。");
       }
       setLastFour('');
     } catch (error) {
       console.error("Roll call error:", error);
-      toast.error("An error occurred during roll call.");
+      toast.error("點名時發生錯誤。");
     } finally {
       setIsCheckingRoll(false);
     }
@@ -153,7 +153,7 @@ export const CongregationView: React.FC = () => {
 
   const handleBooking = async () => {
     if (!profile || !selectedRoom || !bookingDate || !bookingPurpose) {
-      toast.error("Please fill in all booking details.");
+      toast.error("請填寫所有預約資料。");
       return;
     }
 
@@ -170,12 +170,12 @@ export const CongregationView: React.FC = () => {
         created_at: new Date().toISOString(),
       });
       if (error) throw error;
-      toast.success("Booking request submitted!");
+      toast.success("預約申請已送出！");
       setSelectedRoom(null);
       setBookingPurpose('');
     } catch (error) {
       console.error("Booking error:", error);
-      toast.error("Failed to submit booking.");
+      toast.error("送出預約失敗。");
     }
   };
 
@@ -183,8 +183,8 @@ export const CongregationView: React.FC = () => {
     <div className="max-w-6xl mx-auto space-y-8 py-8">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-4xl font-heading font-bold">Congregation Portal</h1>
-          <p className="text-muted-foreground">Welcome back, {profile?.name}.</p>
+          <h1 className="text-4xl font-heading font-bold">會眾入口</h1>
+          <p className="text-muted-foreground">歡迎回來，{profile?.name}。</p>
         </div>
         <Badge variant="outline" className="text-lg py-1 px-4">
           {profile?.role.toUpperCase()}
@@ -195,32 +195,32 @@ export const CongregationView: React.FC = () => {
         <TabsList className="grid w-full grid-cols-3 mb-8">
           <TabsTrigger value="rollcall">
             <UserCheck className="w-4 h-4 mr-2" />
-            Roll Call
+            點名
           </TabsTrigger>
           <TabsTrigger value="booking">
             <CalendarIcon className="w-4 h-4 mr-2" />
-            Room Booking
+            場地預約
           </TabsTrigger>
           <TabsTrigger value="history">
             <History className="w-4 h-4 mr-2" />
-            My History
+            我的記錄
           </TabsTrigger>
         </TabsList>
 
         <TabsContent value="rollcall">
           <Card className="max-w-md mx-auto glass-card">
             <CardHeader>
-              <CardTitle>Self-Service Roll Call</CardTitle>
+              <CardTitle>自助點名</CardTitle>
               <CardDescription>
-                Enter the last 4 digits of your registered phone number to mark your attendance.
+                輸入您已登記電話號碼的末 4 碼以標記出席。
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="digits">Last 4 Digits</Label>
+                <Label htmlFor="digits">末 4 碼</Label>
                 <Input
                   id="digits"
-                  placeholder="e.g. 1234"
+                  placeholder="例如 1234"
                   maxLength={4}
                   value={lastFour}
                   onChange={(e) => setLastFour(e.target.value.replace(/\D/g, ''))}
@@ -234,7 +234,7 @@ export const CongregationView: React.FC = () => {
                 onClick={handleRollCall}
                 disabled={isCheckingRoll || lastFour.length !== 4}
               >
-                {isCheckingRoll ? "Verifying..." : "Mark Attendance"}
+                {isCheckingRoll ? "驗證中..." : "標記出席"}
               </Button>
             </CardFooter>
           </Card>
@@ -243,7 +243,7 @@ export const CongregationView: React.FC = () => {
         <TabsContent value="booking" className="space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div className="md:col-span-2 space-y-4">
-              <h3 className="text-xl font-bold">Select a Room</h3>
+              <h3 className="text-xl font-bold">選擇場地</h3>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 {rooms.map((room) => (
                   <Card
@@ -253,7 +253,7 @@ export const CongregationView: React.FC = () => {
                   >
                     <CardHeader className="p-4">
                       <CardTitle className="text-lg">{room.name}</CardTitle>
-                      <CardDescription>Capacity: {room.capacity}</CardDescription>
+                      <CardDescription>容量：{room.capacity}</CardDescription>
                     </CardHeader>
                   </Card>
                 ))}
@@ -262,15 +262,15 @@ export const CongregationView: React.FC = () => {
 
             <Card className="h-fit">
               <CardHeader>
-                <CardTitle>Booking Details</CardTitle>
+                <CardTitle>預約詳情</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="space-y-2">
-                  <Label>Date</Label>
+                  <Label>日期</Label>
                   <Popover>
                     <PopoverTrigger className={cn(buttonVariants({ variant: "outline" }), "w-full justify-start text-left font-normal")}>
                       <CalendarIcon className="mr-2 h-4 w-4" />
-                      {bookingDate ? format(bookingDate, "PPP") : <span>Pick a date</span>}
+                      {bookingDate ? format(bookingDate, "PPP") : <span>選擇日期</span>}
                     </PopoverTrigger>
                     <PopoverContent className="w-auto p-0">
                       <Calendar mode="single" selected={bookingDate} onSelect={setBookingDate} initialFocus />
@@ -278,10 +278,10 @@ export const CongregationView: React.FC = () => {
                   </Popover>
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="purpose">Purpose</Label>
+                  <Label htmlFor="purpose">用途</Label>
                   <Input
                     id="purpose"
-                    placeholder="e.g. Choir practice"
+                    placeholder="例如：詩班練習"
                     value={bookingPurpose}
                     onChange={(e) => setBookingPurpose(e.target.value)}
                   />
@@ -289,7 +289,7 @@ export const CongregationView: React.FC = () => {
               </CardContent>
               <CardFooter>
                 <Button className="w-full" onClick={handleBooking} disabled={!selectedRoom}>
-                  Request Booking
+                  提交預約
                 </Button>
               </CardFooter>
             </Card>
@@ -301,7 +301,7 @@ export const CongregationView: React.FC = () => {
             <section className="space-y-4">
               <h3 className="text-xl font-bold flex items-center">
                 <Clock className="w-5 h-5 mr-2" />
-                Recent Bookings
+                最近預約
               </h3>
               <div className="space-y-3">
                 {myBookings.length > 0 ? myBookings.map((booking) => (
@@ -312,18 +312,18 @@ export const CongregationView: React.FC = () => {
                         <p className="text-xs text-muted-foreground">{format(new Date(booking.start_time), "PPP p")}</p>
                       </div>
                       <Badge variant={booking.status === 'approved' ? 'default' : booking.status === 'rejected' ? 'destructive' : 'secondary'}>
-                        {booking.status}
+                        {booking.status === 'approved' ? '已核准' : booking.status === 'rejected' ? '已拒絕' : '待審核'}
                       </Badge>
                     </CardContent>
                   </Card>
-                )) : <p className="text-muted-foreground text-sm">No bookings yet.</p>}
+                )) : <p className="text-muted-foreground text-sm">尚無預約。</p>}
               </div>
             </section>
 
             <section className="space-y-4">
               <h3 className="text-xl font-bold flex items-center">
                 <CheckCircle2 className="w-5 h-5 mr-2" />
-                Attendance History
+                出席記錄
               </h3>
               <div className="space-y-3">
                 {myAttendance.length > 0 ? myAttendance.map((record) => (
@@ -331,12 +331,12 @@ export const CongregationView: React.FC = () => {
                     <CardContent className="p-4 flex justify-between items-center">
                       <div>
                         <p className="font-bold">{format(new Date(record.date), "EEEE, MMM do")}</p>
-                        <p className="text-xs text-muted-foreground">Method: Last 4 Digits ({record.last_four_digits})</p>
+                        <p className="text-xs text-muted-foreground">方式：末 4 碼（{record.last_four_digits}）</p>
                       </div>
-                      <Badge className="bg-green-500 hover:bg-green-600">Present</Badge>
+                      <Badge className="bg-green-500 hover:bg-green-600">出席</Badge>
                     </CardContent>
                   </Card>
-                )) : <p className="text-muted-foreground text-sm">No attendance records found.</p>}
+                )) : <p className="text-muted-foreground text-sm">找不到出席記錄。</p>}
               </div>
             </section>
           </div>
