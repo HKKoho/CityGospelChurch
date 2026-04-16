@@ -3,11 +3,17 @@ import { supabase } from '../lib/supabase';
 import { MediaItem, Room } from '../types';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
-import { Play, Music, Image as ImageIcon, MapPin, Users, CalendarDays, ShieldCheck, ChevronDown } from 'lucide-react';
+import { Play, Music, Image as ImageIcon, MapPin, Users, CalendarDays, ShieldCheck, ChevronDown, LogOut } from 'lucide-react';
 import { Button } from './ui/button';
 import { motion, AnimatePresence } from 'motion/react';
 import { AuthContext } from './Auth';
 import { GeminiGuidance } from './GeminiGuidance';
+import { ChurchAuth } from './ChurchAuth';
+
+interface ChurchSession {
+  last_four: string;
+  name: string;
+}
 
 interface SectionItem {
   id: string;
@@ -27,6 +33,12 @@ export const PublicView: React.FC = () => {
   const [rollCallItems, setRollCallItems] = useState<SectionItem[]>([]);
   const [showGuidance, setShowGuidance] = useState(false);
   const [openPortal, setOpenPortal] = useState<'church' | 'service' | null>(null);
+  const [churchSession, setChurchSession] = useState<ChurchSession | null>(() => {
+    try {
+      const stored = localStorage.getItem('church_session');
+      return stored ? JSON.parse(stored) : null;
+    } catch { return null; }
+  });
 
   useEffect(() => {
     const fetchData = async () => {
@@ -84,6 +96,16 @@ export const PublicView: React.FC = () => {
 
   const togglePortal = (portal: 'church' | 'service') => {
     setOpenPortal(prev => prev === portal ? null : portal);
+    setShowGuidance(false);
+  };
+
+  const handleChurchAuthSuccess = (last_four: string, name: string) => {
+    setChurchSession({ last_four, name });
+  };
+
+  const handleChurchLogout = () => {
+    localStorage.removeItem('church_session');
+    setChurchSession(null);
     setShowGuidance(false);
   };
 
@@ -201,7 +223,7 @@ export const PublicView: React.FC = () => {
         </motion.div>
       </section>
 
-      {/* Expanded: 城市福音教會 services */}
+      {/* Expanded: 城市福音教會 */}
       <AnimatePresence>
         {openPortal === 'church' && (
           <motion.section
@@ -212,82 +234,104 @@ export const PublicView: React.FC = () => {
             transition={{ duration: 0.3, ease: 'easeInOut' }}
             className="overflow-hidden"
           >
-            <div className="space-y-6 pt-2">
-              <div>
-                <h3 className="text-2xl font-heading font-bold">教會服務</h3>
-                <p className="text-muted-foreground text-sm">崇拜影片、靈修資源與參與記名。</p>
-              </div>
+            <div className="pt-2">
+              {!churchSession ? (
+                /* ── Auth gate ── */
+                <div className="space-y-6">
+                  <div className="text-center space-y-1">
+                    <h3 className="text-2xl font-heading font-bold">城市福音教會</h3>
+                    <p className="text-muted-foreground text-sm">請登入以使用教會服務</p>
+                  </div>
+                  <ChurchAuth onSuccess={handleChurchAuthSuccess} />
+                </div>
+              ) : (
+                /* ── Authenticated services ── */
+                <div className="space-y-6">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="text-2xl font-heading font-bold">教會服務</h3>
+                      <p className="text-muted-foreground text-sm">
+                        歡迎回來，{churchSession.name || `末 4 碼 ${churchSession.last_four}`}
+                      </p>
+                    </div>
+                    <Button variant="ghost" size="sm" onClick={handleChurchLogout} className="text-muted-foreground">
+                      <LogOut className="w-4 h-4 mr-1" />
+                      登出
+                    </Button>
+                  </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                {churchServices.map((section, i) => {
-                  const hasItems = section.items.length > 0;
-                  return (
-                    <motion.div
-                      key={i}
-                      initial={{ opacity: 0, y: 16 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: i * 0.08 }}
-                    >
-                      <Card
-                        className="overflow-hidden cursor-pointer hover:ring-2 hover:ring-primary hover:shadow-lg transition-all"
-                        onClick={() => {
-                          if (hasItems && !section.isGuidance && section.items[0]) {
-                            section.clickAction(section.items[0]);
-                          } else {
-                            (section.clickAction as () => void)();
-                          }
-                        }}
-                      >
-                        <div className={`relative aspect-video flex flex-col items-center justify-center gap-3 ${hasItems ? 'bg-primary/5' : 'bg-muted'}`}>
-                          <div className={hasItems ? 'text-primary' : 'text-muted-foreground/50'}>
-                            {section.icon}
-                          </div>
-                          <span className={`text-base font-bold ${hasItems ? 'text-primary' : 'text-muted-foreground'}`}>
-                            {section.label}
-                          </span>
-                        </div>
-                        <CardHeader className="p-4">
-                          {hasItems ? (
-                            <>
-                              <CardTitle className="text-base">{section.items[0].title}</CardTitle>
-                              <CardDescription className="line-clamp-2">{section.items[0].description}</CardDescription>
-                            </>
-                          ) : (
-                            <>
-                              <CardTitle className="text-base text-muted-foreground/50">
-                                {section.isGuidance ? '點擊開啟 AI 助理' : '點擊進入'}
-                              </CardTitle>
-                              <CardDescription>
-                                {section.isGuidance ? '教會 AI 聖經資料查詢助理' : '請管理員新增內容。'}
-                              </CardDescription>
-                            </>
-                          )}
-                        </CardHeader>
-                        {hasItems && section.items.length > 1 && (
-                          <CardContent className="pt-0 pb-4 px-4">
-                            <div className="space-y-1">
-                              {section.items.slice(1, 4).map(item => (
-                                <div
-                                  key={item.id}
-                                  className="text-sm text-muted-foreground hover:text-primary cursor-pointer truncate"
-                                  onClick={e => { e.stopPropagation(); section.clickAction(item); }}
-                                >
-                                  • {item.title}
-                                </div>
-                              ))}
-                              {section.items.length > 4 && (
-                                <div className="text-xs text-muted-foreground">...還有 {section.items.length - 4} 項</div>
-                              )}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    {churchServices.map((section, i) => {
+                      const hasItems = section.items.length > 0;
+                      return (
+                        <motion.div
+                          key={i}
+                          initial={{ opacity: 0, y: 16 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ delay: i * 0.08 }}
+                        >
+                          <Card
+                            className="overflow-hidden cursor-pointer hover:ring-2 hover:ring-primary hover:shadow-lg transition-all"
+                            onClick={() => {
+                              if (hasItems && !section.isGuidance && section.items[0]) {
+                                section.clickAction(section.items[0]);
+                              } else {
+                                (section.clickAction as () => void)();
+                              }
+                            }}
+                          >
+                            <div className={`relative aspect-video flex flex-col items-center justify-center gap-3 ${hasItems ? 'bg-primary/5' : 'bg-muted'}`}>
+                              <div className={hasItems ? 'text-primary' : 'text-muted-foreground/50'}>
+                                {section.icon}
+                              </div>
+                              <span className={`text-base font-bold ${hasItems ? 'text-primary' : 'text-muted-foreground'}`}>
+                                {section.label}
+                              </span>
                             </div>
-                          </CardContent>
-                        )}
-                      </Card>
-                    </motion.div>
-                  );
-                })}
-              </div>
+                            <CardHeader className="p-4">
+                              {hasItems ? (
+                                <>
+                                  <CardTitle className="text-base">{section.items[0].title}</CardTitle>
+                                  <CardDescription className="line-clamp-2">{section.items[0].description}</CardDescription>
+                                </>
+                              ) : (
+                                <>
+                                  <CardTitle className="text-base text-muted-foreground/50">
+                                    {section.isGuidance ? '點擊開啟 AI 助理' : '點擊進入'}
+                                  </CardTitle>
+                                  <CardDescription>
+                                    {section.isGuidance ? '教會 AI 聖經資料查詢助理' : '請管理員新增內容。'}
+                                  </CardDescription>
+                                </>
+                              )}
+                            </CardHeader>
+                            {hasItems && section.items.length > 1 && (
+                              <CardContent className="pt-0 pb-4 px-4">
+                                <div className="space-y-1">
+                                  {section.items.slice(1, 4).map(item => (
+                                    <div
+                                      key={item.id}
+                                      className="text-sm text-muted-foreground hover:text-primary cursor-pointer truncate"
+                                      onClick={e => { e.stopPropagation(); section.clickAction(item); }}
+                                    >
+                                      • {item.title}
+                                    </div>
+                                  ))}
+                                  {section.items.length > 4 && (
+                                    <div className="text-xs text-muted-foreground">...還有 {section.items.length - 4} 項</div>
+                                  )}
+                                </div>
+                              </CardContent>
+                            )}
+                          </Card>
+                        </motion.div>
+                      );
+                    })}
+                  </div>
 
-              {showGuidance && <GeminiGuidance />}
+                  {showGuidance && <GeminiGuidance />}
+                </div>
+              )}
             </div>
           </motion.section>
         )}
