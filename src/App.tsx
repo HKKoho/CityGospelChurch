@@ -8,14 +8,15 @@ import { AuthProvider, AuthContext, AuthGuard } from './components/Auth';
 import { PublicView } from './components/PublicView';
 import { CongregationView } from './components/CongregationView';
 import { AdminView } from './components/AdminView';
+import { KioskMode } from './components/KioskMode';
 import { Button } from './components/ui/button';
 import { Toaster } from './components/ui/sonner';
-import { LogOut, Church, LayoutDashboard, Globe, Users, Home } from 'lucide-react';
+import { LogOut, Church, LayoutDashboard, Users, Home, Monitor } from 'lucide-react';
 import { Separator } from './components/ui/separator';
 
 const Navigation = () => {
   const { profile, logout } = useContext(AuthContext);
-  const [activeTab, setActiveTab] = React.useState<'public' | 'congregation' | 'admin'>('public');
+  const [activeTab, setActiveTab] = React.useState<'public' | 'congregation' | 'admin' | 'kiosk'>('public');
 
   React.useEffect(() => {
     const handleNavigate = (e: Event) => {
@@ -25,6 +26,16 @@ const Navigation = () => {
     window.addEventListener('navigate', handleNavigate);
     return () => window.removeEventListener('navigate', handleNavigate);
   }, []);
+
+  // Kiosk mode is full-screen — no header/footer
+  if (activeTab === 'kiosk') {
+    return (
+      <AuthGuard allowedRoles={['congregation', 'admin']}>
+        <KioskMode />
+        <Toaster position="top-center" />
+      </AuthGuard>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -48,14 +59,24 @@ const Navigation = () => {
                 首頁
               </Button>
               {profile && (profile.role === 'congregation' || profile.role === 'admin') && (
-                <Button
-                  variant={activeTab === 'congregation' ? 'secondary' : 'ghost'}
-                  size="sm"
-                  onClick={() => setActiveTab('congregation')}
-                >
-                  <Users className="w-4 h-4 mr-2" />
-                  會眾
-                </Button>
+                <>
+                  <Button
+                    variant={activeTab === 'congregation' ? 'secondary' : 'ghost'}
+                    size="sm"
+                    onClick={() => setActiveTab('congregation')}
+                  >
+                    <Users className="w-4 h-4 mr-2" />
+                    會眾
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setActiveTab('kiosk')}
+                  >
+                    <Monitor className="w-4 h-4 mr-2" />
+                    自助報到
+                  </Button>
+                </>
               )}
               {profile && profile.role === 'admin' && (
                 <Button

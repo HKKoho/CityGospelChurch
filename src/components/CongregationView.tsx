@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useContext } from 'react';
 import { supabase } from '../lib/supabase';
 import { AuthContext } from './Auth';
-import { Room, Booking, AttendanceRecord, WorksheetEntry } from '../types';
+import { Room, Booking, AttendanceRecord, WorksheetEntry, Session } from '../types';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -11,7 +11,7 @@ import { Badge } from './ui/badge';
 import { Calendar } from './ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
 import { format } from 'date-fns';
-import { Calendar as CalendarIcon, CheckCircle2, Clock, History, UserCheck } from 'lucide-react';
+import { Calendar as CalendarIcon, CheckCircle2, Clock, History, UserCheck, Monitor, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { motion } from 'motion/react';
 
@@ -23,6 +23,9 @@ export const CongregationView: React.FC = () => {
   const [rooms, setRooms] = useState<Room[]>([]);
   const [myBookings, setMyBookings] = useState<Booking[]>([]);
   const [myAttendance, setMyAttendance] = useState<AttendanceRecord[]>([]);
+
+  // Session State
+  const [activeSession, setActiveSession] = useState<Session | null>(null);
 
   // Roll Call State
   const [lastFour, setLastFour] = useState('');
@@ -83,10 +86,26 @@ export const CongregationView: React.FC = () => {
       })
       .subscribe();
 
+    // Fetch active session
+    const fetchSession = async () => {
+      const { data } = await supabase.from('sessions').select('*').eq('is_active', true).limit(1);
+      if (data && data.length > 0) setActiveSession(data[0] as Session);
+      else setActiveSession(null);
+    };
+    fetchSession();
+
+    const sessionChannel = supabase
+      .channel('congregation-sessions')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'sessions' }, () => {
+        fetchSession();
+      })
+      .subscribe();
+
     return () => {
       supabase.removeChannel(roomsChannel);
       supabase.removeChannel(bookingsChannel);
       supabase.removeChannel(attendanceChannel);
+      supabase.removeChannel(sessionChannel);
     };
   }, [profile]);
 
@@ -137,6 +156,7 @@ export const CongregationView: React.FC = () => {
             date: today,
             last_four_digits: lastFour,
             status: 'present',
+            session_id: activeSession?.id || null,
             created_at: new Date().toISOString(),
           });
         if (insertError) throw insertError;
@@ -208,6 +228,29 @@ export const CongregationView: React.FC = () => {
         </TabsList>
 
         <TabsContent value="rollcall">
+          {/* Session status banner */}
+          {activeSession ? (
+            <div className="flex items-center justify-center gap-2 mb-4 p-3 rounded-lg bg-green-500/10 border border-green-500/20">
+              <Badge className="bg-green-500 animate-pulse">進行中</Badge>
+              <span className="text-sm font-medium">{activeSession.name}</span>
+            </div>
+          ) : (
+            <div className="flex items-center justify-center gap-2 mb-4 p-3 rounded-lg bg-muted border">
+              <AlertCircle className="w-4 h-4 text-muted-foreground" />
+              <span className="text-sm text-muted-foreground">目前沒有進行中的點名活動</span>
+            </div>
+          )}
+
+          <div className="flex justify-center mb-6">
+            <Button
+              variant="outline"
+              onClick={() => window.dispatchEvent(new CustomEvent('navigate', { detail: { tab: 'kiosk' } }))}
+            >
+              <Monitor className="w-4 h-4 mr-2" />
+              進入自助報到模式
+            </Button>
+          </div>
+
           <Card className="max-w-md mx-auto glass-card">
             <CardHeader>
               <CardTitle>自助點名</CardTitle>

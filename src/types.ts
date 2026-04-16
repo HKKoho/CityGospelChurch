@@ -48,6 +48,7 @@ export interface AttendanceRecord {
   user_name: string;
   last_four_digits: string;
   status: 'present' | 'absent';
+  session_id?: string;
   created_at: string;
 }
 
@@ -55,5 +56,15 @@ export interface WorksheetEntry {
   id: string;
   last_four_digits: string;
   name: string;
+  department?: string;
   user_id?: string;
+}
+
+export interface Session {
+  id: string;
+  name: string;
+  date: string;
+  is_active: boolean;
+  created_by?: string;
+  created_at: string;
 }

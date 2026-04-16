@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { UserProfile, Booking, Room, MediaItem, WorksheetEntry, AttendanceRecord } from '../types';
+import { UserProfile, Booking, Room, MediaItem, WorksheetEntry, AttendanceRecord, Session } from '../types';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -9,7 +9,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { Badge } from './ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
-import { Check, X, Trash2, Plus, Users, Calendar, Video, FileSpreadsheet, Activity, MapPin, Home, Play, Music, Image as ImageIcon } from 'lucide-react';
+import { Check, X, Trash2, Plus, Users, Calendar, Video, FileSpreadsheet, Activity, MapPin, Home, Play, Music, Image as ImageIcon, Radio, Upload, Monitor, User } from 'lucide-react';
+import { motion } from 'motion/react';
 import { toast } from 'sonner';
 import { format, startOfWeek, endOfWeek, isWithinInterval, parseISO } from 'date-fns';
 
@@ -60,10 +61,15 @@ export const AdminView: React.FC = () => {
   const [devotionItems, setDevotionItems] = useState<MediaItem[]>([]);
   const [rollCallItems, setRollCallItems] = useState<MediaItem[]>([]);
 
+  // Session state
+  const [activeSession, setActiveSession] = useState<Session | null>(null);
+  const [sessionName, setSessionName] = useState('');
+  const [sessionAttendance, setSessionAttendance] = useState<AttendanceRecord[]>([]);
+
   // Form states
   const [newRoom, setNewRoom] = useState({ name: '', capacity: 0, description: '', image_url: '' });
   const [newMedia, setNewMedia] = useState({ title: '', type: 'video' as any, url: '', description: '', category: '' });
-  const [newWorksheet, setNewWorksheet] = useState({ name: '', last_four_digits: '' });
+  const [newWorksheet, setNewWorksheet] = useState({ name: '', last_four_digits: '', department: '' });
   const [newWorship, setNewWorship] = useState({ title: '', url: '', description: '' });
   const [newDevotion, setNewDevotion] = useState({ title: '', url: '', description: '' });
   const [newRollCall, setNewRollCall] = useState({ title: '', url: '', description: '' });
@@ -126,10 +132,123 @@ export const AdminView: React.FC = () => {
         .subscribe()
     );
 
+    // Fetch active session
+    const fetchSession = async () => {
+      const { data } = await supabase.from('sessions').select('*').eq('is_active', true).limit(1);
+      if (data && data.length > 0) setActiveSession(data[0] as Session);
+      else setActiveSession(null);
+    };
+    fetchSession();
+
+    const sessionChannel = supabase
+      .channel('admin-sessions')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'sessions' }, () => {
+        fetchSession();
+      })
+      .subscribe();
+
     return () => {
       channels.forEach((ch) => supabase.removeChannel(ch));
+      supabase.removeChannel(sessionChannel);
     };
   }, []);
+
+  // Real-time attendance for active session
+  useEffect(() => {
+    if (!activeSession) { setSessionAttendance([]); return; }
+
+    const fetchSessionAttendance = async () => {
+      const { data } = await supabase
+        .from('attendance')
+        .select('*')
+        .eq('session_id', activeSession.id)
+        .order('created_at', { ascending: false });
+      if (data) setSessionAttendance(data as AttendanceRecord[]);
+    };
+    fetchSessionAttendance();
+
+    const channel = supabase
+      .channel('admin-session-attendance')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'attendance' }, () => {
+        fetchSessionAttendance();
+      })
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [activeSession?.id]);
+
+  const handleStartSession = async () => {
+    if (!sessionName.trim()) { toast.error('請輸入活動名稱。'); return; }
+    try {
+      // Deactivate all existing sessions
+      await supabase.from('sessions').update({ is_active: false }).eq('is_active', true);
+      // Create new active session
+      const { error } = await supabase.from('sessions').insert({
+        name: sessionName.trim(),
+        is_active: true,
+      });
+      if (error) throw error;
+      toast.success('點名活動已啟用。');
+      setSessionName('');
+    } catch {
+      toast.error('啟用點名失敗。');
+    }
+  };
+
+  const handleStopSession = async () => {
+    if (!activeSession) return;
+    try {
+      const { error } = await supabase.from('sessions').update({ is_active: false }).eq('id', activeSession.id);
+      if (error) throw error;
+      toast.success('點名活動已停止。');
+    } catch {
+      toast.error('停止點名失敗。');
+    }
+  };
+
+  const handleCsvUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      const text = event.target?.result as string;
+      // Remove BOM if present
+      const clean = text.replace(/^\uFEFF/, '');
+      const lines = clean.split(/\r?\n/).filter(line => line.trim());
+
+      // Skip header if it looks like one
+      const startIndex = lines[0]?.match(/姓名|name|名/i) ? 1 : 0;
+
+      const entries: { name: string; last_four_digits: string; department?: string }[] = [];
+      for (let i = startIndex; i < lines.length; i++) {
+        const parts = lines[i].split(',').map(s => s.trim());
+        if (parts.length >= 2 && parts[0] && parts[1]?.length === 4 && /^\d{4}$/.test(parts[1])) {
+          entries.push({
+            name: parts[0],
+            last_four_digits: parts[1],
+            department: parts[2] || undefined,
+          });
+        }
+      }
+
+      if (entries.length === 0) {
+        toast.error('找不到有效的資料。格式：姓名,末4碼[,部門]');
+        return;
+      }
+
+      try {
+        const { error } = await supabase.from('worksheet').insert(entries);
+        if (error) throw error;
+        toast.success(`已匯入 ${entries.length} 筆參與者資料。`);
+      } catch {
+        toast.error('匯入失敗。');
+      }
+    };
+    reader.readAsText(file, 'utf-8');
+    // Reset file input
+    e.target.value = '';
+  };
 
   const handleUpdateUserRole = async (uid: string, role: string) => {
     try {
@@ -200,7 +319,7 @@ export const AdminView: React.FC = () => {
       const { error } = await supabase.from('worksheet').insert(newWorksheet);
       if (error) throw error;
       toast.success("工作表項目已新增。");
-      setNewWorksheet({ name: '', last_four_digits: '' });
+      setNewWorksheet({ name: '', last_four_digits: '', department: '' });
     } catch (error) {
       toast.error("新增工作表項目失敗。");
     }
@@ -236,7 +355,8 @@ export const AdminView: React.FC = () => {
       <GeminiGuidance />
 
       <Tabs defaultValue="bookings" className="w-full">
-        <TabsList className="grid w-full grid-cols-6 mb-8">
+        <TabsList className="grid w-full grid-cols-7 mb-8">
+          <TabsTrigger value="rollcall-control"><Radio className="w-4 h-4 mr-2" /> 點名控制</TabsTrigger>
           <TabsTrigger value="homepage"><Home className="w-4 h-4 mr-2" /> 首頁內容</TabsTrigger>
           <TabsTrigger value="bookings"><Calendar className="w-4 h-4 mr-2" /> 預約</TabsTrigger>
           <TabsTrigger value="users"><Users className="w-4 h-4 mr-2" /> 使用者</TabsTrigger>
@@ -244,6 +364,175 @@ export const AdminView: React.FC = () => {
           <TabsTrigger value="rooms"><MapPin className="w-4 h-4 mr-2" /> 場地</TabsTrigger>
           <TabsTrigger value="media"><Video className="w-4 h-4 mr-2" /> 媒體</TabsTrigger>
         </TabsList>
+
+        <TabsContent value="rollcall-control">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {/* Left: Session Control + Participants */}
+            <div className="space-y-6">
+              {/* Session Control */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Radio className="w-5 h-5 text-primary" />
+                    聚會控制
+                  </CardTitle>
+                  <CardDescription>啟用或停止自助報到點名。</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {activeSession ? (
+                    <div className="space-y-4">
+                      <div className="flex items-center gap-2">
+                        <Badge className="bg-green-500 animate-pulse">進行中</Badge>
+                        <span className="font-bold">{activeSession.name}</span>
+                      </div>
+                      <p className="text-sm text-muted-foreground">
+                        開始於：{format(new Date(activeSession.created_at), 'yyyy/MM/dd HH:mm')}
+                      </p>
+                      <Button variant="destructive" className="w-full" onClick={handleStopSession}>
+                        停止點名
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      <div className="flex items-center gap-2">
+                        <Badge variant="secondary">未啟用</Badge>
+                        <span className="text-muted-foreground text-sm">目前無進行中的點名</span>
+                      </div>
+                      <div className="space-y-2">
+                        <Label>活動名稱</Label>
+                        <Input
+                          placeholder="例如：主日崇拜"
+                          value={sessionName}
+                          onChange={(e) => setSessionName(e.target.value)}
+                        />
+                      </div>
+                      <Button className="w-full bg-green-600 hover:bg-green-700" onClick={handleStartSession}>
+                        啟用自助點名
+                      </Button>
+                    </div>
+                  )}
+                </CardContent>
+                <CardFooter>
+                  <Button
+                    variant="outline"
+                    className="w-full"
+                    onClick={() => window.dispatchEvent(new CustomEvent('navigate', { detail: { tab: 'kiosk' } }))}
+                  >
+                    <Monitor className="w-4 h-4 mr-2" />
+                    開啟自助報到螢幕
+                  </Button>
+                </CardFooter>
+              </Card>
+
+              {/* CSV Import */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Upload className="w-5 h-5 text-primary" />
+                    批量匯入參與者
+                  </CardTitle>
+                  <CardDescription>上傳 CSV 檔案批量新增工作表。</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <p className="text-xs text-muted-foreground">
+                    CSV 格式：姓名,末4碼,部門（部門為選填）
+                  </p>
+                  <div className="relative">
+                    <input
+                      type="file"
+                      accept=".csv"
+                      onChange={handleCsvUpload}
+                      className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                    />
+                    <Button variant="outline" className="w-full">
+                      <Upload className="w-4 h-4 mr-2" />
+                      選擇 CSV 檔案
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Quick participant count */}
+              <Card>
+                <CardContent className="p-4">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-muted-foreground">工作表人數</span>
+                    <Badge variant="secondary">{worksheet.length} 位</Badge>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Right: Real-time Attendance Log */}
+            <div className="md:col-span-2">
+              <Card className="h-full">
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="flex items-center gap-2">
+                      <Activity className="w-5 h-5 text-primary" />
+                      即時出席記錄
+                    </CardTitle>
+                    <Badge variant="secondary" className="flex items-center gap-1">
+                      <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+                      已確認 {sessionAttendance.length} 人
+                    </Badge>
+                  </div>
+                  <CardDescription>
+                    {activeSession ? `${activeSession.name} — 即時報到狀況` : '請先啟用點名活動以查看即時記錄。'}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {activeSession ? (
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>時間</TableHead>
+                          <TableHead>參與者</TableHead>
+                          <TableHead>末 4 碼</TableHead>
+                          <TableHead>狀態</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {sessionAttendance.length > 0 ? sessionAttendance.map((record, index) => (
+                          <motion.tr
+                            key={record.id}
+                            initial={{ opacity: 0, x: -10 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            transition={{ delay: index * 0.03 }}
+                            className="border-b transition-colors hover:bg-muted/50"
+                          >
+                            <TableCell className="font-mono text-sm">
+                              {format(new Date(record.created_at), 'HH:mm:ss')}
+                            </TableCell>
+                            <TableCell className="font-medium flex items-center gap-2">
+                              <User className="w-4 h-4 text-muted-foreground" />
+                              {record.user_name}
+                            </TableCell>
+                            <TableCell className="font-mono">{record.last_four_digits}</TableCell>
+                            <TableCell>
+                              <Badge className="bg-green-500">出席</Badge>
+                            </TableCell>
+                          </motion.tr>
+                        )) : (
+                          <TableRow>
+                            <TableCell colSpan={4} className="text-center text-muted-foreground py-12">
+                              等待報到中...
+                            </TableCell>
+                          </TableRow>
+                        )}
+                      </TableBody>
+                    </Table>
+                  ) : (
+                    <div className="text-center py-16 text-muted-foreground">
+                      <Radio className="w-12 h-12 mx-auto mb-4 opacity-30" />
+                      <p>啟用點名活動後，此處會即時顯示報到記錄。</p>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+          </div>
+        </TabsContent>
 
         <TabsContent value="homepage">
           <div className="space-y-8">
@@ -619,6 +908,7 @@ export const AdminView: React.FC = () => {
                     <TableRow>
                       <TableHead>末 4 碼</TableHead>
                       <TableHead>姓名</TableHead>
+                      <TableHead>部門</TableHead>
                       <TableHead className="text-right">操作</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -627,6 +917,7 @@ export const AdminView: React.FC = () => {
                       <TableRow key={entry.id}>
                         <TableCell className="font-mono font-bold">{entry.last_four_digits}</TableCell>
                         <TableCell>{entry.name}</TableCell>
+                        <TableCell className="text-muted-foreground">{entry.department || '—'}</TableCell>
                         <TableCell className="text-right">
                           <Button size="sm" variant="ghost" onClick={() => handleDelete('worksheet', entry.id)}>
                             <Trash2 className="h-4 w-4" />
@@ -651,6 +942,10 @@ export const AdminView: React.FC = () => {
                 <div className="space-y-2">
                   <Label>末 4 碼</Label>
                   <Input maxLength={4} value={newWorksheet.last_four_digits} onChange={(e) => setNewWorksheet({...newWorksheet, last_four_digits: e.target.value})} />
+                </div>
+                <div className="space-y-2">
+                  <Label>部門（選填）</Label>
+                  <Input placeholder="例如：詩班" value={newWorksheet.department} onChange={(e) => setNewWorksheet({...newWorksheet, department: e.target.value})} />
                 </div>
               </CardContent>
               <CardFooter>
