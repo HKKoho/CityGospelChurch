@@ -1,14 +1,15 @@
 import React, { useState, useEffect, useContext } from 'react';
 import { supabase } from '../lib/supabase';
-import { MediaItem, Room } from '../types';
+import { MediaItem } from '../types';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
-import { Play, Music, Image as ImageIcon, MapPin, Users, CalendarDays, ShieldCheck, ChevronDown, LogOut } from 'lucide-react';
+import { Play, Music, Image as ImageIcon, ShieldCheck, ChevronDown, LogOut } from 'lucide-react';
 import { Button } from './ui/button';
 import { motion, AnimatePresence } from 'motion/react';
 import { AuthContext } from './Auth';
 import { GeminiGuidance } from './GeminiGuidance';
 import { ChurchAuth } from './ChurchAuth';
+import { VenueApplication } from './VenueApplication';
 
 interface ChurchSession {
   last_four: string;
@@ -27,7 +28,6 @@ interface SectionItem {
 export const PublicView: React.FC = () => {
   const { profile, signIn } = useContext(AuthContext);
   const [media, setMedia] = useState<MediaItem[]>([]);
-  const [rooms, setRooms] = useState<Room[]>([]);
   const [worshipItems, setWorshipItems] = useState<SectionItem[]>([]);
   const [devotionItems, setDevotionItems] = useState<SectionItem[]>([]);
   const [rollCallItems, setRollCallItems] = useState<SectionItem[]>([]);
@@ -42,12 +42,8 @@ export const PublicView: React.FC = () => {
 
   useEffect(() => {
     const fetchData = async () => {
-      const [mediaRes, roomsRes] = await Promise.all([
-        supabase.from('media').select('*').limit(6),
-        supabase.from('rooms').select('*').limit(4),
-      ]);
-      if (mediaRes.data) setMedia(mediaRes.data as MediaItem[]);
-      if (roomsRes.data) setRooms(roomsRes.data as Room[]);
+      const { data } = await supabase.from('media').select('*').limit(6);
+      if (data) setMedia(data as MediaItem[]);
     };
     fetchData();
 
@@ -73,16 +69,8 @@ export const PublicView: React.FC = () => {
       })
       .subscribe();
 
-    const roomsChannel = supabase
-      .channel('public-rooms')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'rooms' }, () => {
-        supabase.from('rooms').select('*').limit(4).then(({ data }) => { if (data) setRooms(data as Room[]); });
-      })
-      .subscribe();
-
     return () => {
       supabase.removeChannel(mediaChannel);
-      supabase.removeChannel(roomsChannel);
     };
   }, []);
 
@@ -349,107 +337,13 @@ export const PublicView: React.FC = () => {
             className="overflow-hidden"
           >
             <div className="space-y-6 pt-2">
-              <div className="flex items-end justify-between">
-                <div>
-                  <h3 className="text-2xl font-heading font-bold">場地預約</h3>
-                  <p className="text-muted-foreground text-sm">精美的場地可供預約及舉辦活動。</p>
-                </div>
-                <Button
-                  size="lg"
-                  onClick={() => window.dispatchEvent(new CustomEvent('navigate', { detail: { tab: 'congregation' } }))}
-                >
-                  <CalendarDays className="w-4 h-4 mr-2" />
-                  立即預約
-                </Button>
+              <div>
+                <h3 className="text-2xl font-heading font-bold">1cm 租借場地申請</h3>
+                <p className="text-muted-foreground text-sm">
+                  1/F, Win Century Centre, 2A Mong Kok Road, Kln.
+                </p>
               </div>
-
-              {/* Monthly Booking Map */}
-              <Card className="p-6">
-                <div className="flex items-center justify-between mb-4">
-                  <h4 className="text-lg font-bold flex items-center gap-2">
-                    <CalendarDays className="w-5 h-5 text-primary" />
-                    本月場地預約狀況
-                  </h4>
-                  <div className="flex items-center gap-4 text-xs">
-                    {[['bg-green-400', '可預約'], ['bg-orange-400', '部分已佔用'], ['bg-red-400', '已滿']].map(([color, label]) => (
-                      <div key={label} className="flex items-center gap-1">
-                        <div className={`w-3 h-3 rounded ${color}`} />
-                        <span>{label}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-                {(() => {
-                  const now = new Date();
-                  const year = now.getFullYear();
-                  const month = now.getMonth();
-                  const today = now.getDate();
-                  const daysInMonth = new Date(year, month + 1, 0).getDate();
-                  const firstDayOfWeek = new Date(year, month, 1).getDay();
-                  const weekdays = ['日', '一', '二', '三', '四', '五', '六'];
-                  const mockStatus: Record<number, 'available' | 'partial' | 'full'> = {
-                    3: 'partial', 5: 'full', 6: 'full',
-                    10: 'partial', 12: 'full', 13: 'partial',
-                    17: 'full', 19: 'partial', 20: 'full',
-                    24: 'partial', 25: 'full', 26: 'partial', 27: 'full',
-                  };
-                  const statusColor = (day: number) => {
-                    if (day < today) return 'bg-muted text-muted-foreground/40';
-                    const s = mockStatus[day];
-                    if (s === 'full') return 'bg-red-400/80 text-white';
-                    if (s === 'partial') return 'bg-orange-400/80 text-white';
-                    return 'bg-green-400/80 text-white';
-                  };
-                  return (
-                    <div className="grid grid-cols-7 gap-1">
-                      {weekdays.map(d => (
-                        <div key={d} className="text-center text-xs font-bold text-muted-foreground py-2">{d}</div>
-                      ))}
-                      {Array.from({ length: firstDayOfWeek }).map((_, i) => <div key={`e-${i}`} />)}
-                      {Array.from({ length: daysInMonth }).map((_, i) => {
-                        const day = i + 1;
-                        return (
-                          <div
-                            key={day}
-                            className={`text-center py-2 rounded-md text-sm font-medium ${statusColor(day)} ${day === today ? 'ring-2 ring-primary ring-offset-2' : ''}`}
-                          >
-                            {day}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  );
-                })()}
-              </Card>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                {rooms.map(room => (
-                  <Card key={room.id} className="flex flex-col md:flex-row overflow-hidden border-none shadow-none bg-muted/30">
-                    <div className="w-full md:w-1/2 aspect-video md:aspect-auto">
-                      <img
-                        src={room.image_url || `https://picsum.photos/seed/${room.id}/600/400`}
-                        alt={room.name}
-                        className="w-full h-full object-cover"
-                        referrerPolicy="no-referrer"
-                      />
-                    </div>
-                    <div className="p-6 flex flex-col justify-center space-y-4">
-                      <h4 className="text-2xl font-bold">{room.name}</h4>
-                      <p className="text-muted-foreground">{room.description}</p>
-                      <div className="flex items-center space-x-4 text-sm">
-                        <div className="flex items-center">
-                          <Users className="w-4 h-4 mr-1 text-primary" />
-                          <span>最多容納 {room.capacity} 人</span>
-                        </div>
-                        <div className="flex items-center">
-                          <MapPin className="w-4 h-4 mr-1 text-primary" />
-                          <span>主堂</span>
-                        </div>
-                      </div>
-                    </div>
-                  </Card>
-                ))}
-              </div>
+              <VenueApplication />
             </div>
           </motion.section>
         )}
