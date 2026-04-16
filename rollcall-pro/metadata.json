@@ -1,0 +1,6 @@
+{
+  "name": "RollCall Pro",
+  "description": "A high-traffic identification-based roll-call system with instant lookup, automatic timestamping, and an admin dashboard for attendance history and reporting.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}

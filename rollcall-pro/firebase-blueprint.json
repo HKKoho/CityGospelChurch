@@ -1,0 +1,53 @@
+{
+  "entities": {
+    "Participant": {
+      "title": "Participant",
+      "description": "A person who can participate in activities.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "description": "Full name of the participant" },
+        "mobileLast4": { "type": "string", "description": "Last 4 digits of the mobile number" }
+      },
+      "required": ["name", "mobileLast4"]
+    },
+    "ActivitySession": {
+      "title": "Activity Session",
+      "description": "A specific roll-call session for an activity.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "description": "Name of the activity" },
+        "date": { "type": "string", "format": "date", "description": "Date of the activity" },
+        "isActive": { "type": "boolean", "description": "Whether the roll call is currently enabled" },
+        "createdAt": { "type": "number", "description": "Timestamp of creation" }
+      },
+      "required": ["name", "date", "isActive", "createdAt"]
+    },
+    "AttendanceRecord": {
+      "title": "Attendance Record",
+      "description": "A record of a participant checking in to a session.",
+      "type": "object",
+      "properties": {
+        "sessionId": { "type": "string", "description": "ID of the activity session" },
+        "participantId": { "type": "string", "description": "ID of the participant" },
+        "participantName": { "type": "string", "description": "Name of the participant at time of check-in" },
+        "confirmedAt": { "type": "number", "description": "Timestamp of confirmation" },
+        "date": { "type": "string", "format": "date", "description": "Date of the activity" }
+      },
+      "required": ["sessionId", "participantId", "participantName", "confirmedAt", "date"]
+    }
+  },
+  "firestore": {
+    "/participants": {
+      "schema": "Participant",
+      "description": "Global list of potential participants"
+    },
+    "/sessions": {
+      "schema": "ActivitySession",
+      "description": "List of all roll-call sessions"
+    },
+    "/sessions/{sessionId}/attendance": {
+      "schema": "AttendanceRecord",
+      "description": "Attendance records for a specific session"
+    }
+  }
+}
