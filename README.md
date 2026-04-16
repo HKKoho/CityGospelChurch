@@ -45,11 +45,11 @@ A church community management platform for **City Gospel Church**. Three user ro
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────┐
+┌───────────────────────────────────────────-──────┐
 │                   Client (Browser / PWA)         │
 │                                                  │
 │  React 19 + TypeScript + Tailwind CSS 4          │
-│  Tab-based routing: 首頁 | 會眾 | 管理           │
+│  Tab-based routing: 首頁 | 會眾 | 管理             │
 │                                                  │
 │  Supabase Client ── PostgreSQL (real-time sync)  │
 │  Supabase Client ── Auth (Google OAuth)          │
@@ -61,13 +61,13 @@ A church community management platform for **City Gospel Church**. Three user ro
           ▼                         ▼
 ┌──────────────────┐    ┌──────────────────────┐
 │   Supabase       │    │   API Server         │
-│   (hosted or     │    │   (Vercel Serverless  │
-│    self-hosted)  │    │    OR Express local)  │
-│                  │    │                       │
-│  PostgreSQL DB   │    │  Proxies Gemini       │
-│  Auth service    │    │  calls, keeps API     │
-│  Realtime engine │    │  key private          │
-└──────────────────┘    └──────────┬────────────┘
+│   (hosted or     │    │   (Vercel Serverless │
+│    self-hosted)  │    │    OR Express local) │
+│                  │    │                      │
+│  PostgreSQL DB   │    │  Proxies Gemini      │
+│  Auth service    │    │  calls, keeps API    │
+│  Realtime engine │    │  key private         │
+└──────────────────┘    └──────────┬───────────┘
                                    │
                                    ▼
                            Google Gemini API
