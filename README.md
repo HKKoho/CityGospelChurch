@@ -1,57 +1,73 @@
-# Ecclesia Manager
+# 城市福音教會管理系統 (City Gospel Church Manager)
 
-A church community management platform for **City Gospel Church**. Three user roles (public, congregation, admin) with tab-based navigation, Supabase backend (PostgreSQL + Auth), and Gemini AI integration. Supports both cloud deployment (Vercel) and on-premise deployment (local Express server with self-hosted Supabase).
+A church community management platform for **City Gospel Church**. Three user roles (public, congregation, admin) with tab-based navigation, Supabase backend (PostgreSQL + Auth), Gemini AI integration, and full PWA support. Supports cloud deployment (Vercel), on-premise deployment (local Express server), and mobile installation (iOS/Android).
 
 ## Features
 
 ### Public Access (no login required)
-- **Media Library** — browse sermons, videos, and audio highlights
+- **Church Services** — three main sections on the landing page:
+  - **崇拜YouTube** — current week worship video with auto-archival of past weeks
+  - **靈修日程** — AI-powered Bible study assistant (Gemini AI)
+  - **參與記名** — quick access to attendance registration
 - **Room Showcase** — view available church spaces with capacity info
-- **AI Guidance** — get community engagement tips powered by Gemini AI
+- **Monthly Booking Calendar** — visual calendar showing room availability for the current month
 
 ### Congregation (requires login + `congregation` or `admin` role)
-- **Roll Call** — 4-digit phone number lookup against a worksheet for attendance tracking
-- **Room Booking** — reserve church rooms with date/time selection (2-hour default duration)
-- **Booking History** — view and manage your past reservations
+- **Roll Call (點名)** — 4-digit phone number lookup against a worksheet for attendance tracking
+- **Room Booking (場地預約)** — reserve church rooms with date/time selection (2-hour default duration)
+- **My History (我的記錄)** — view past bookings and attendance records
 
 ### Admin (requires `admin` role)
-- **User Management** — assign roles (`public`, `congregation`, `admin`) to registered users
-- **Booking Approvals** — approve or reject pending room reservations
-- **Room Management** — add, edit, and remove bookable spaces
-- **Media Management** — upload and organize sermon/media content
-- **Worksheet Management** — maintain the 4-digit code-to-name mapping for roll call
+- **Homepage Content (首頁內容)** — manage content for the 3 public landing page sections:
+  - Worship YouTube videos with weekly archive table
+  - Devotion/Bible study resources
+  - Participation/roll call resources
+- **Booking Approvals (預約)** — approve or reject pending room reservations
+- **User Management (使用者)** — assign roles (`public`, `congregation`, `admin`)
+- **Worksheet (工作表)** — maintain the 4-digit code-to-name mapping for roll call
+- **Room Management (場地)** — add, edit, and remove bookable spaces
+- **Media Management (媒體)** — upload and organize sermon/media content
 - **Seed Demo Data** — populate the database with sample data for testing
 
 ### Authentication & RBAC
 - Google OAuth sign-in via Supabase Auth
 - Role-based access control enforced both client-side (`AuthGuard` component) and server-side (PostgreSQL Row Level Security policies)
 - New users default to `public` role; admins promote users through the admin panel
+- Admin login button available on the public landing page
+
+### Progressive Web App (PWA)
+- Installable on iOS and Android home screens
+- Offline caching with Workbox service worker
+- Standalone display mode with custom church icons
+- Runtime caching for Supabase API, images, and fonts
+- Ready for native app conversion via Capacitor or TWA
 
 ## Architecture
 
 ```
-┌────────────────────────────────────────────-────-─┐
-│                   Client (Browser)                │
-│                                                   │
-│  React 19 + TypeScript + Tailwind CSS 4           │
-│  Tab-based routing: Public | Congregation | Admin │
-│                                                   │
-│  Supabase Client ── PostgreSQL (real-time sync)   │
-│  Supabase Client ── Auth (Google OAuth)           │
-│  fetch()         ── /api/gemini/guidance          │
-└──────────────────────┬───────────────────────-────┘
+┌─────────────────────────────────────────────────┐
+│                   Client (Browser / PWA)         │
+│                                                  │
+│  React 19 + TypeScript + Tailwind CSS 4          │
+│  Tab-based routing: 首頁 | 會眾 | 管理           │
+│                                                  │
+│  Supabase Client ── PostgreSQL (real-time sync)  │
+│  Supabase Client ── Auth (Google OAuth)          │
+│  fetch()         ── /api/gemini/guidance         │
+│  Service Worker  ── Offline caching (Workbox)    │
+└──────────────────────┬───────────────────────────┘
                        │
           ┌────────────┼────────────┐
           ▼                         ▼
-┌──────────────────┐    ┌────────────────────-─┐
+┌──────────────────┐    ┌──────────────────────┐
 │   Supabase       │    │   API Server         │
-│   (hosted or     │    │   (Vercel Serverless │
-│    self-hosted)  │    │    OR Express local) │
-│                  │    │                      │
-│  PostgreSQL DB   │    │  Proxies Gemini      │
-│  Auth service    │    │  calls, keeps API    │
-│  Realtime engine │    │  key private         │
-└──────────────────┘    └──────────┬──────────-┘
+│   (hosted or     │    │   (Vercel Serverless  │
+│    self-hosted)  │    │    OR Express local)  │
+│                  │    │                       │
+│  PostgreSQL DB   │    │  Proxies Gemini       │
+│  Auth service    │    │  calls, keeps API     │
+│  Realtime engine │    │  key private          │
+└──────────────────┘    └──────────┬────────────┘
                                    │
                                    ▼
                            Google Gemini API
@@ -66,12 +82,15 @@ A church community management platform for **City Gospel Church**. Three user ro
 | Auth | Supabase Auth (Google OAuth) |
 | AI | Gemini AI (`gemini-3-flash-preview`) |
 | API | Vercel serverless function OR Express server |
+| PWA | vite-plugin-pwa, Workbox |
+| UI Language | Traditional Chinese (繁體中文) |
 
 ### Data Flow
 - All data flows through **Supabase Realtime** (`postgres_changes`) — components subscribe on mount and unsubscribe on cleanup
 - Mutations use `supabase.from('table').insert()`, `.update()`, `.delete()` directly from components
 - The Gemini AI endpoint is the only server-side API — it keeps the API key private
 - Security enforced at the database level via PostgreSQL Row Level Security (RLS) policies
+- Homepage section content (worship YouTube, devotion, roll call) stored in `media` table with `category` field
 
 ## File Structure
 
@@ -80,27 +99,33 @@ CityGospelChurch/
 ├── api/
 │   └── gemini/
 │       └── guidance.ts              # Vercel serverless function for Gemini AI
+├── public/
+│   ├── icon-192.svg                 # PWA icon (192x192)
+│   ├── icon-512.svg                 # PWA icon (512x512)
+│   └── apple-touch-icon.svg         # iOS home screen icon
 ├── supabase/
 │   └── migrations/
 │       └── 001_initial_schema.sql   # PostgreSQL schema, RLS policies, realtime config
 ├── src/
 │   ├── components/
 │   │   ├── ui/                      # shadcn/base-ui primitives (button, card, etc.)
-│   │   ├── AdminView.tsx            # Admin dashboard — users, bookings, rooms, media
+│   │   ├── AdminView.tsx            # Admin dashboard — homepage content, users, bookings, rooms, media
 │   │   ├── Auth.tsx                 # AuthProvider, AuthContext, AuthGuard components
 │   │   ├── CongregationView.tsx     # Roll call, room booking, booking history
-│   │   ├── GeminiGuidance.tsx       # AI guidance card (calls /api/gemini/guidance)
-│   │   └── PublicView.tsx           # Media highlights, room showcase, AI guidance
+│   │   ├── GeminiGuidance.tsx       # AI Bible study assistant (calls /api/gemini/guidance)
+│   │   └── PublicView.tsx           # Landing page — 3 section cards, room showcase, booking calendar
 │   ├── lib/
 │   │   ├── supabase.ts              # Supabase client initialization
 │   │   └── utils.ts                 # Tailwind `cn()` merge helper
-│   ├── App.tsx                      # Root component — AuthProvider + tab navigation
+│   ├── App.tsx                      # Root component — AuthProvider + tab navigation + Home button
 │   ├── index.css                    # Tailwind config + custom glass/grid styles
 │   ├── main.tsx                     # React DOM entry point
 │   └── types.ts                     # TypeScript interfaces (UserProfile, Room, Booking, etc.)
+├── index.html                       # HTML entry with PWA meta tags
 ├── vercel.json                      # Vercel deployment config
-├── vite.config.ts                   # Vite build config + path aliases
+├── vite.config.ts                   # Vite build config + PWA plugin + path aliases
 ├── tsconfig.json                    # TypeScript config
+├── metadata.json                    # App metadata
 ├── package.json                     # Dependencies and scripts
 └── .env.example                     # Environment variable template
 ```
@@ -112,9 +137,14 @@ CityGospelChurch/
 | `users` | User profiles and roles | `uid`, `name`, `email`, `role`, `last_four_digits` |
 | `bookings` | Room reservations | `room_id`, `user_id`, `status` (pending/approved/rejected) |
 | `rooms` | Available spaces | `name`, `capacity`, `image_url` |
-| `media` | Sermons, videos, audio | `title`, `type`, `url`, `category` |
+| `media` | Sermons, videos, homepage sections | `title`, `type`, `url`, `category` |
 | `attendance` | Roll call records | `date`, `last_four_digits`, `status` |
 | `worksheet` | 4-digit code to name mapping | `last_four_digits`, `name` |
+
+The `media` table `category` field supports special values for homepage sections:
+- `worship_youtube` — worship YouTube videos (shown on landing page)
+- `devotion` — devotion/Bible study resources
+- `roll_call` — participation/roll call resources
 
 Full schema with RLS policies: `supabase/migrations/001_initial_schema.sql`
 
@@ -218,7 +248,7 @@ npm install
 npm run build
 ```
 
-This outputs static files to `dist/`.
+This outputs static files to `dist/` including the PWA service worker.
 
 #### Step 3: Create the Express server
 
@@ -274,7 +304,7 @@ app.get('*', (req, res) => {
 });
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Ecclesia Manager running at http://localhost:${PORT}`);
+  console.log(`City Gospel Church Manager running at http://localhost:${PORT}`);
 });
 ```
 
@@ -343,25 +373,55 @@ pm2 startup   # auto-start on system boot
 
 ---
 
+### Option 3: Mobile App (PWA)
+
+The app is already a Progressive Web App. Users can install it directly:
+
+- **iOS Safari**: Tap Share button > "加入主畫面" (Add to Home Screen)
+- **Android Chrome**: Tap the install banner or Menu > "安裝應用程式" (Install App)
+
+#### Converting to Native App (if required)
+
+If a native app store listing is needed, use one of these approaches:
+
+**Capacitor (recommended — full native API access):**
+```bash
+npm install @capacitor/core @capacitor/cli
+npx cap init "城市福音教會" "com.citygospel.app"
+npm install @capacitor/ios @capacitor/android
+npx cap add ios
+npx cap add android
+npm run build
+npx cap sync
+npx cap open ios      # Opens in Xcode
+npx cap open android  # Opens in Android Studio
+```
+
+**TWA — Trusted Web Activity (Android only, simpler):**
+Use [PWABuilder](https://www.pwabuilder.com/) to generate an Android APK wrapping your deployed PWA URL.
+
+---
+
 ### Deployment Comparison
 
-| | Vercel + Hosted Supabase | Local Server + Self-Hosted Supabase |
-|---|---|---|
-| **Data location** | Cloud (Supabase servers) | On your hardware |
-| **Setup** | Minimal | Requires Docker + server maintenance |
-| **Cost** | Free tiers available | Free (your own hardware) |
-| **SSL/HTTPS** | Automatic | Needs Cloudflare Tunnel or manual cert |
-| **Uptime** | Managed | Depends on your machine/network |
-| **Scaling** | Automatic | Limited to server hardware |
-| **Data sovereignty** | No (cloud) | Yes (fully on-premise) |
-| **Best for** | Quick deployment, small teams | Organizations requiring data control |
+| | Vercel + Hosted Supabase | Local Server + Self-Hosted Supabase | PWA Mobile |
+|---|---|---|---|
+| **Data location** | Cloud (Supabase servers) | On your hardware | Same as web deployment |
+| **Setup** | Minimal | Requires Docker + server maintenance | Zero (already built in) |
+| **Cost** | Free tiers available | Free (your own hardware) | Free |
+| **SSL/HTTPS** | Automatic | Needs Cloudflare Tunnel or manual cert | Inherits from web |
+| **Uptime** | Managed | Depends on your machine/network | Offline capable |
+| **Scaling** | Automatic | Limited to server hardware | N/A |
+| **Data sovereignty** | No (cloud) | Yes (fully on-premise) | Same as web |
+| **App store listing** | N/A | N/A | Via Capacitor or TWA |
+| **Best for** | Quick deployment, small teams | Organizations requiring data control | Mobile users |
 
 ## Development
 
 ```bash
 npm install          # Install dependencies
 npm run dev          # Start Vite dev server on port 3000
-npm run build        # Production build
+npm run build        # Production build (includes PWA service worker)
 npm run preview      # Preview production build
 npm run lint         # TypeScript type-check (tsc --noEmit)
 npm run clean        # Remove dist/
@@ -379,6 +439,10 @@ npm run clean        # Remove dist/
 | `PORT` | Local server only | Express server port (default: 3000) |
 
 Note: `VITE_` variables are embedded into the JavaScript bundle at build time. The anon key is safe to expose — security is enforced by PostgreSQL RLS policies, not by hiding the key.
+
+## Credits
+
+Powered by [AIbyML.com](https://aibyml.com)
 
 ## License
 
