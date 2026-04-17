@@ -58,7 +58,7 @@ const Navigation = () => {
                 <Home className="w-4 h-4 mr-2" />
                 首頁
               </Button>
-              {profile && (profile.role === 'congregation' || profile.role === 'admin') && (
+              {profile && ['congregation', 'admin', 'pastoral'].includes(profile.role) && (
                 <>
                   <Button
                     variant={activeTab === 'congregation' ? 'secondary' : 'ghost'}
@@ -78,14 +78,14 @@ const Navigation = () => {
                   </Button>
                 </>
               )}
-              {profile && profile.role === 'admin' && (
+              {profile && ['admin', 'pastoral', 'officer'].includes(profile.role) && (
                 <Button
                   variant={activeTab === 'admin' ? 'secondary' : 'ghost'}
                   size="sm"
                   onClick={() => setActiveTab('admin')}
                 >
                   <LayoutDashboard className="w-4 h-4 mr-2" />
-                  管理
+                  {profile.role === 'pastoral' ? '教會管理' : profile.role === 'officer' ? '服務中心管理' : '管理'}
                 </Button>
               )}
             </nav>
@@ -115,7 +115,7 @@ const Navigation = () => {
           </AuthGuard>
         )}
         {activeTab === 'admin' && (
-          <AuthGuard allowedRoles={['admin']}>
+          <AuthGuard allowedRoles={['admin', 'pastoral', 'officer']}>
             <AdminView />
           </AuthGuard>
         )}

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useContext } from 'react';
 import { supabase } from '../lib/supabase';
 import { UserProfile, Booking, Room, MediaItem, WorksheetEntry, AttendanceRecord, Session } from '../types';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from './ui/card';
@@ -9,20 +9,40 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { Badge } from './ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
-import { Check, X, Trash2, Plus, Users, Calendar, Video, FileSpreadsheet, Activity, MapPin, Home, Play, Music, Image as ImageIcon, Radio, Upload, Monitor, User } from 'lucide-react';
+import { Check, X, Trash2, Users, Calendar, Video, FileSpreadsheet, Activity, MapPin, Home, Play, Music, Image as ImageIcon, Radio, Upload, Monitor, User, ClipboardList } from 'lucide-react';
 import { motion } from 'motion/react';
 import { toast } from 'sonner';
 import { format, startOfWeek, endOfWeek, isWithinInterval, parseISO } from 'date-fns';
-
+import { AuthContext } from './Auth';
 import { GeminiGuidance } from './GeminiGuidance';
 
 export const AdminView: React.FC = () => {
+  const { profile } = useContext(AuthContext);
+  const role = profile?.role ?? 'admin';
+
+  // Role-based tab visibility
+  const canSee = {
+    rollcall:  ['admin', 'pastoral'].includes(role),
+    homepage:  ['admin', 'pastoral'].includes(role),
+    worksheet: ['admin', 'pastoral'].includes(role),
+    media:     ['admin', 'pastoral'].includes(role),
+    users:     ['admin', 'pastoral'].includes(role),
+    venues:    ['admin', 'officer'].includes(role),
+    bookings:  ['admin', 'officer'].includes(role),
+    rooms:     ['admin', 'officer'].includes(role),
+  };
+
+  const defaultTab =
+    role === 'officer' ? 'venues' :
+    role === 'pastoral' ? 'rollcall' : 'rollcall';
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [rooms, setRooms] = useState<Room[]>([]);
   const [media, setMedia] = useState<MediaItem[]>([]);
   const [worksheet, setWorksheet] = useState<WorksheetEntry[]>([]);
   const [attendance, setAttendance] = useState<AttendanceRecord[]>([]);
+  const [venueApps, setVenueApps] = useState<any[]>([]);
+  const [appNotes, setAppNotes] = useState<Record<string, string>>({});
 
   const seedData = async () => {
     try {
@@ -131,6 +151,19 @@ export const AdminView: React.FC = () => {
         })
         .subscribe()
     );
+
+    // Fetch venue applications
+    if (canSee.venues) {
+      const fetchVenueApps = async () => {
+        const { data } = await supabase.from('venue_applications').select('*').order('created_at', { ascending: false });
+        if (data) setVenueApps(data);
+      };
+      fetchVenueApps();
+      const vChannel = supabase.channel('admin-venue-apps')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'venue_applications' }, fetchVenueApps)
+        .subscribe();
+      channels.push(vChannel);
+    }
 
     // Fetch active session
     const fetchSession = async () => {
@@ -325,6 +358,18 @@ export const AdminView: React.FC = () => {
     }
   };
 
+  const handleVenueAppAction = async (id: string, status: 'approved' | 'rejected') => {
+    try {
+      const { error } = await supabase.from('venue_applications')
+        .update({ status, admin_notes: appNotes[id] || null })
+        .eq('id', id);
+      if (error) throw error;
+      toast.success(status === 'approved' ? '申請已接納。' : '申請未獲接納。');
+    } catch {
+      toast.error('更新失敗。');
+    }
+  };
+
   const handleDelete = async (table: string, id: string) => {
     if (!confirm("確定要刪除此項目嗎？")) return;
     try {
@@ -340,32 +385,49 @@ export const AdminView: React.FC = () => {
   return (
     <div className="space-y-8 py-8">
       <div className="flex items-center justify-between">
-        <h1 className="text-4xl font-heading font-bold">管理儀表板</h1>
+        <div>
+          <h1 className="text-4xl font-heading font-bold">
+            {role === 'pastoral' ? '教會牧養管理' : role === 'officer' ? '1cm 服務中心管理' : '管理儀表板'}
+          </h1>
+          <p className="text-muted-foreground text-sm mt-1">
+            {role === 'pastoral' ? '點名、崇拜內容、會友工作表' : role === 'officer' ? '場地申請、預約管理、場地設定' : '完整管理後台'}
+          </p>
+        </div>
         <div className="flex space-x-2">
-          <Button variant="outline" size="sm" onClick={seedData}>建立範例資料</Button>
-          <Badge variant="secondary" className="flex items-center">
-            <Users className="w-3 h-3 mr-1" /> {users.length} 位使用者
-          </Badge>
-          <Badge variant="secondary" className="flex items-center">
-            <Activity className="w-3 h-3 mr-1" /> {attendance.length} 筆記錄
-          </Badge>
+          {role === 'admin' && <Button variant="outline" size="sm" onClick={seedData}>建立範例資料</Button>}
+          {canSee.users && (
+            <Badge variant="secondary" className="flex items-center">
+              <Users className="w-3 h-3 mr-1" /> {users.length} 位使用者
+            </Badge>
+          )}
+          {canSee.venues && (
+            <Badge variant="secondary" className="flex items-center">
+              <ClipboardList className="w-3 h-3 mr-1" /> {venueApps.filter(a => a.status === 'pending').length} 待審申請
+            </Badge>
+          )}
+          {canSee.rollcall && (
+            <Badge variant="secondary" className="flex items-center">
+              <Activity className="w-3 h-3 mr-1" /> {attendance.length} 筆記錄
+            </Badge>
+          )}
         </div>
       </div>
 
       <GeminiGuidance />
 
-      <Tabs defaultValue="bookings" className="w-full">
-        <TabsList className="grid w-full grid-cols-7 mb-8">
-          <TabsTrigger value="rollcall-control"><Radio className="w-4 h-4 mr-2" /> 點名控制</TabsTrigger>
-          <TabsTrigger value="homepage"><Home className="w-4 h-4 mr-2" /> 首頁內容</TabsTrigger>
-          <TabsTrigger value="bookings"><Calendar className="w-4 h-4 mr-2" /> 預約</TabsTrigger>
-          <TabsTrigger value="users"><Users className="w-4 h-4 mr-2" /> 使用者</TabsTrigger>
-          <TabsTrigger value="worksheet"><FileSpreadsheet className="w-4 h-4 mr-2" /> 工作表</TabsTrigger>
-          <TabsTrigger value="rooms"><MapPin className="w-4 h-4 mr-2" /> 場地</TabsTrigger>
-          <TabsTrigger value="media"><Video className="w-4 h-4 mr-2" /> 媒體</TabsTrigger>
+      <Tabs defaultValue={defaultTab} className="w-full">
+        <TabsList className="flex flex-wrap gap-1 h-auto mb-8 bg-muted p-1 rounded-lg">
+          {canSee.rollcall  && <TabsTrigger value="rollcall"><Radio className="w-4 h-4 mr-1" />點名控制</TabsTrigger>}
+          {canSee.homepage  && <TabsTrigger value="homepage"><Home className="w-4 h-4 mr-1" />首頁內容</TabsTrigger>}
+          {canSee.worksheet && <TabsTrigger value="worksheet"><FileSpreadsheet className="w-4 h-4 mr-1" />工作表</TabsTrigger>}
+          {canSee.users     && <TabsTrigger value="users"><Users className="w-4 h-4 mr-1" />使用者</TabsTrigger>}
+          {canSee.media     && <TabsTrigger value="media"><Video className="w-4 h-4 mr-1" />媒體</TabsTrigger>}
+          {canSee.venues    && <TabsTrigger value="venues"><ClipboardList className="w-4 h-4 mr-1" />場地申請 {venueApps.filter(a=>a.status==='pending').length > 0 && <Badge className="ml-1 h-5 px-1 text-xs bg-destructive">{venueApps.filter(a=>a.status==='pending').length}</Badge>}</TabsTrigger>}
+          {canSee.bookings  && <TabsTrigger value="bookings"><Calendar className="w-4 h-4 mr-1" />預約</TabsTrigger>}
+          {canSee.rooms     && <TabsTrigger value="rooms"><MapPin className="w-4 h-4 mr-1" />場地</TabsTrigger>}
         </TabsList>
 
-        <TabsContent value="rollcall-control">
+        <TabsContent value="rollcall">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {/* Left: Session Control + Participants */}
             <div className="space-y-6">
@@ -796,6 +858,100 @@ export const AdminView: React.FC = () => {
           </div>
         </TabsContent>
 
+        {/* ── Venue Applications (1cm Officer) ── */}
+        <TabsContent value="venues">
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-2xl font-bold">1cm 租借場地申請</h2>
+                <p className="text-muted-foreground text-sm">審核來自公眾的場地借用申請。</p>
+              </div>
+              <div className="flex gap-2">
+                {(['pending','approved','rejected'] as const).map(s => (
+                  <Badge key={s} variant={s==='pending'?'secondary':s==='approved'?'default':'destructive'}>
+                    {s==='pending'?'待審':s==='approved'?'已接納':'未獲接納'} {venueApps.filter(a=>a.status===s).length}
+                  </Badge>
+                ))}
+              </div>
+            </div>
+
+            {venueApps.length === 0 ? (
+              <Card><CardContent className="py-16 text-center text-muted-foreground">尚無申請記錄</CardContent></Card>
+            ) : venueApps.map(app => (
+              <motion.div key={app.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
+                <Card className={`border-l-4 ${app.status==='approved'?'border-l-green-500':app.status==='rejected'?'border-l-destructive':'border-l-orange-400'}`}>
+                  <CardHeader className="pb-3">
+                    <div className="flex items-start justify-between gap-4">
+                      <div>
+                        <CardTitle className="text-lg">{app.organization}</CardTitle>
+                        <CardDescription>
+                          {app.contact_person} {app.contact_title} ／ {app.mobile} ／ {app.email}
+                        </CardDescription>
+                      </div>
+                      <Badge variant={app.status==='approved'?'default':app.status==='rejected'?'destructive':'secondary'}>
+                        {app.status==='approved'?'已接納':app.status==='rejected'?'未獲接納':'待審核'}
+                      </Badge>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+                      <div><span className="text-muted-foreground">借用場地</span><p className="font-medium">{app.venue_type}{app.room_count ? ` × ${app.room_count} 間` : ''}</p></div>
+                      <div><span className="text-muted-foreground">活動性質</span><p className="font-medium">{app.activity_nature}</p></div>
+                      <div><span className="text-muted-foreground">活動方式</span><p className="font-medium">{app.activity_mode}{app.activity_fee ? ` (HKD ${app.activity_fee})` : ''}</p></div>
+                      <div><span className="text-muted-foreground">預計人數</span><p className="font-medium">{app.attendance_range}</p></div>
+                    </div>
+                    <div className="text-sm">
+                      <span className="text-muted-foreground">借用日期</span>
+                      <div className="flex flex-wrap gap-2 mt-1">
+                        {(app.sessions as any[]).map((s: any, i: number) => (
+                          <Badge key={i} variant="outline">{s.date} {s.start}–{s.end}</Badge>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="text-sm">
+                      <span className="text-muted-foreground">服侍對象</span>
+                      <span className="ml-2">{(app.target_audience as string[]).join('、')}</span>
+                    </div>
+                    <div className="text-sm">
+                      <span className="text-muted-foreground">活動內容</span>
+                      <p className="mt-0.5 text-foreground">{app.description}</p>
+                    </div>
+                    <div className="text-sm">
+                      <span className="text-muted-foreground">現場代表</span>
+                      <span className="ml-2">{app.rep_name} {app.rep_title}</span>
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      申請日期：{format(new Date(app.created_at), 'yyyy/MM/dd HH:mm')}
+                    </div>
+
+                    {app.status === 'pending' && (
+                      <div className="pt-2 space-y-2 border-t">
+                        <Label className="text-sm">備註（選填）</Label>
+                        <Input
+                          placeholder="給申請人的備註或說明"
+                          value={appNotes[app.id] || ''}
+                          onChange={e => setAppNotes(prev => ({ ...prev, [app.id]: e.target.value }))}
+                        />
+                        <div className="flex gap-2">
+                          <Button size="sm" className="bg-green-600 hover:bg-green-700" onClick={() => handleVenueAppAction(app.id, 'approved')}>
+                            <Check className="w-4 h-4 mr-1" />接納
+                          </Button>
+                          <Button size="sm" variant="destructive" onClick={() => handleVenueAppAction(app.id, 'rejected')}>
+                            <X className="w-4 h-4 mr-1" />未獲接納
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                    {app.admin_notes && (
+                      <p className="text-sm bg-muted rounded px-3 py-2">備註：{app.admin_notes}</p>
+                    )}
+                  </CardContent>
+                </Card>
+              </motion.div>
+            ))}
+          </div>
+        </TabsContent>
+
         <TabsContent value="bookings">
           <Card>
             <CardHeader>
@@ -878,7 +1034,9 @@ export const AdminView: React.FC = () => {
                           <SelectContent>
                             <SelectItem value="public">公開</SelectItem>
                             <SelectItem value="congregation">會眾</SelectItem>
-                            <SelectItem value="admin">管理員</SelectItem>
+                            <SelectItem value="pastoral">教會牧養管理員</SelectItem>
+                            <SelectItem value="officer">1cm 行政主任</SelectItem>
+                            <SelectItem value="admin">超級管理員</SelectItem>
                           </SelectContent>
                         </Select>
                       </TableCell>
