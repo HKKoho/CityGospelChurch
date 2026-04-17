@@ -47,7 +47,7 @@ const Navigation = () => {
               onClick={() => setActiveTab('public')}
             >
               <Church className="w-6 h-6 text-primary" />
-              <span>城市福音教會</span>
+              <span>城市福音教會＋1cm 綜合服務中心</span>
             </div>
             <nav className="hidden md:flex items-center gap-4 text-sm font-medium">
               <Button
