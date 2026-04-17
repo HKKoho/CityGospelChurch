@@ -117,7 +117,7 @@ begin
   end if;
   return NEW;
 end;
-$$ language plpgsql security definer;
+$$ language plpgsql security definer set search_path = public;
 
 create trigger booking_status_guard
   before update on bookings
