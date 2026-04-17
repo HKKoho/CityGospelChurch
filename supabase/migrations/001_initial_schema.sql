@@ -106,7 +106,7 @@ returns boolean as $$
     auth.jwt() ->> 'email' = 'phish.econ@gmail.com'
     and (auth.jwt() ->> 'email_verified')::boolean = true
   );
-$$ language sql security definer stable;
+$$ language sql security definer stable set search_path = public;
 
 -- Prevent non-admins from changing booking status
 create or replace function prevent_status_change()
