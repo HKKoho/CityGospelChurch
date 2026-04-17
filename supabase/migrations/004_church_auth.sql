@@ -9,7 +9,7 @@ create extension if not exists pgcrypto;
 -- No direct read/write via RLS — all access through RPCs.
 -- ============================================================
 
-create table church_auth (
+create table if not exists church_auth (
   last_four_digits text primary key check (char_length(last_four_digits) = 4),
   password_hash    text not null,
   created_at       timestamptz not null default now(),
