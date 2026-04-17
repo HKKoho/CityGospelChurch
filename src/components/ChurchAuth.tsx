@@ -14,6 +14,12 @@ type Mode = 'login' | 'signup';
 const PASSWORD_REGEX = /^[A-Za-z0-9]{8}$/;
 const DIGITS_REGEX = /^\d{4}$/;
 
+// SHA-256 hash using browser Web Crypto API — no RPC needed
+async function sha256(text: string): Promise<string> {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
 export const ChurchAuth: React.FC<ChurchAuthProps> = ({ onSuccess }) => {
   const [mode, setMode] = useState<Mode>('login');
   const [last_four, setLastFour] = useState('');
@@ -23,7 +29,7 @@ export const ChurchAuth: React.FC<ChurchAuthProps> = ({ onSuccess }) => {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
-  const passwordStrength = (): { hasUpper: boolean; hasLower: boolean; hasDigit: boolean; validLen: boolean } => ({
+  const passwordStrength = () => ({
     validLen: password.length === 8,
     hasUpper: /[A-Z]/.test(password),
     hasLower: /[a-z]/.test(password),
@@ -46,42 +52,52 @@ export const ChurchAuth: React.FC<ChurchAuthProps> = ({ onSuccess }) => {
 
     setLoading(true);
     try {
+      const hash = await sha256(last_four + password); // salt with last_four
+
       if (mode === 'signup') {
-        const { error: rpcError } = await supabase.rpc('church_signup', {
-          p_last_four: last_four,
-          p_password: password,
-        });
-        if (rpcError) throw rpcError;
+        // Upsert password hash directly into church_auth table
+        const { error: upsertError } = await supabase
+          .from('church_auth')
+          .upsert(
+            { last_four_digits: last_four, password_hash: hash, updated_at: new Date().toISOString() },
+            { onConflict: 'last_four_digits' }
+          );
+        if (upsertError) throw upsertError;
         setSuccess('註冊成功！正在登入...');
-        // Auto sign-in after signup
-        await signIn();
-      } else {
-        await signIn();
       }
+
+      // Sign in: verify hash matches stored record
+      const { data, error: selectError } = await supabase
+        .from('church_auth')
+        .select('last_four_digits')
+        .eq('last_four_digits', last_four)
+        .eq('password_hash', hash)
+        .maybeSingle();
+
+      if (selectError) throw selectError;
+      if (!data) throw new Error('Invalid credentials');
+
+      // Look up name from worksheet
+      const { data: member } = await supabase
+        .from('worksheet')
+        .select('name')
+        .eq('last_four_digits', last_four)
+        .maybeSingle();
+
+      const name = member?.name || '';
+      localStorage.setItem('church_session', JSON.stringify({ last_four, name }));
+      onSuccess(last_four, name);
+
     } catch (err: any) {
       const msg = err?.message || '';
       if (msg.includes('Invalid credentials')) {
         setError('號碼或密碼不正確。');
-      } else if (msg.includes('alphanumeric')) {
-        setError('密碼必須為 8 位英數字元（不可含特殊符號）。');
       } else {
         setError('發生錯誤，請重試。');
       }
     } finally {
       setLoading(false);
     }
-  };
-
-  const signIn = async () => {
-    const { data, error: rpcError } = await supabase.rpc('church_signin', {
-      p_last_four: last_four,
-      p_password: password,
-    });
-    if (rpcError) throw rpcError;
-    const name = (data as string) || '';
-    // Persist session (no sensitive data — only last_four and name)
-    localStorage.setItem('church_session', JSON.stringify({ last_four, name }));
-    onSuccess(last_four, name);
   };
 
   const switchMode = (m: Mode) => {
@@ -124,7 +140,6 @@ export const ChurchAuth: React.FC<ChurchAuthProps> = ({ onSuccess }) => {
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-4">
-        {/* Last 4 digits */}
         <div className="space-y-1.5">
           <label className="text-sm font-medium">手機末 4 碼</label>
           <Input
@@ -139,7 +154,6 @@ export const ChurchAuth: React.FC<ChurchAuthProps> = ({ onSuccess }) => {
           />
         </div>
 
-        {/* Password */}
         <div className="space-y-1.5">
           <label className="text-sm font-medium">密碼（8 位英數字元）</label>
           <div className="relative">
@@ -162,48 +176,34 @@ export const ChurchAuth: React.FC<ChurchAuthProps> = ({ onSuccess }) => {
             </button>
           </div>
 
-          {/* Password strength hints (only when typing) */}
           {password.length > 0 && (
             <div className="grid grid-cols-2 gap-1 pt-1">
-              {[
+              {([
                 [strength.validLen, '8 個字元'],
                 [strength.hasUpper, '含大寫英文'],
                 [strength.hasLower, '含小寫英文'],
                 [strength.hasDigit, '含數字'],
-              ].map(([ok, label]) => (
-                <div key={label as string} className={`flex items-center gap-1 text-xs ${ok ? 'text-green-600' : 'text-muted-foreground'}`}>
+              ] as [boolean, string][]).map(([ok, label]) => (
+                <div key={label} className={`flex items-center gap-1 text-xs ${ok ? 'text-green-600' : 'text-muted-foreground'}`}>
                   <div className={`w-1.5 h-1.5 rounded-full ${ok ? 'bg-green-500' : 'bg-muted-foreground/40'}`} />
-                  {label as string}
+                  {label}
                 </div>
               ))}
             </div>
           )}
         </div>
 
-        {/* Error / Success */}
         <AnimatePresence mode="wait">
           {error && (
-            <motion.div
-              key="error"
-              initial={{ opacity: 0, y: -4 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0 }}
-              className="flex items-center gap-2 text-sm text-destructive bg-destructive/10 rounded-lg px-3 py-2"
-            >
-              <AlertCircle className="w-4 h-4 shrink-0" />
-              {error}
+            <motion.div key="error" initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+              className="flex items-center gap-2 text-sm text-destructive bg-destructive/10 rounded-lg px-3 py-2">
+              <AlertCircle className="w-4 h-4 shrink-0" />{error}
             </motion.div>
           )}
           {success && (
-            <motion.div
-              key="success"
-              initial={{ opacity: 0, y: -4 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0 }}
-              className="flex items-center gap-2 text-sm text-green-700 bg-green-50 rounded-lg px-3 py-2"
-            >
-              <CheckCircle2 className="w-4 h-4 shrink-0" />
-              {success}
+            <motion.div key="success" initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+              className="flex items-center gap-2 text-sm text-green-700 bg-green-50 rounded-lg px-3 py-2">
+              <CheckCircle2 className="w-4 h-4 shrink-0" />{success}
             </motion.div>
           )}
         </AnimatePresence>
