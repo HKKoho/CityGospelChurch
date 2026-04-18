@@ -284,59 +284,6 @@ export const CongregationView: React.FC = () => {
         </TabsContent>
 
         <TabsContent value="booking" className="space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="md:col-span-2 space-y-4">
-              <h3 className="text-xl font-bold">選擇場地</h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {rooms.map((room) => (
-                  <Card
-                    key={room.id}
-                    className={`cursor-pointer transition-all ${selectedRoom?.id === room.id ? 'ring-2 ring-primary bg-primary/5' : 'hover:bg-muted/50'}`}
-                    onClick={() => setSelectedRoom(room)}
-                  >
-                    <CardHeader className="p-4">
-                      <CardTitle className="text-lg">{room.name}</CardTitle>
-                      <CardDescription>容量：{room.capacity}</CardDescription>
-                    </CardHeader>
-                  </Card>
-                ))}
-              </div>
-            </div>
-
-            <Card className="h-fit">
-              <CardHeader>
-                <CardTitle>預約詳情</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  <Label>日期</Label>
-                  <Popover>
-                    <PopoverTrigger className={cn(buttonVariants({ variant: "outline" }), "w-full justify-start text-left font-normal")}>
-                      <CalendarIcon className="mr-2 h-4 w-4" />
-                      {bookingDate ? format(bookingDate, "PPP") : <span>選擇日期</span>}
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0">
-                      <Calendar mode="single" selected={bookingDate} onSelect={setBookingDate} initialFocus />
-                    </PopoverContent>
-                  </Popover>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="purpose">用途</Label>
-                  <Input
-                    id="purpose"
-                    placeholder="例如：詩班練習"
-                    value={bookingPurpose}
-                    onChange={(e) => setBookingPurpose(e.target.value)}
-                  />
-                </div>
-              </CardContent>
-              <CardFooter>
-                <Button className="w-full" onClick={handleBooking} disabled={!selectedRoom}>
-                  提交預約
-                </Button>
-              </CardFooter>
-            </Card>
-          </div>
           {/* Two-month booking calendar */}
           <div>
             <h3 className="text-xl font-bold mb-4">預約日曆</h3>
@@ -393,6 +340,60 @@ export const CongregationView: React.FC = () => {
                 );
               })}
             </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="md:col-span-2 space-y-4">
+              <h3 className="text-xl font-bold">選擇場地</h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {rooms.map((room) => (
+                  <Card
+                    key={room.id}
+                    className={`cursor-pointer transition-all ${selectedRoom?.id === room.id ? 'ring-2 ring-primary bg-primary/5' : 'hover:bg-muted/50'}`}
+                    onClick={() => setSelectedRoom(room)}
+                  >
+                    <CardHeader className="p-4">
+                      <CardTitle className="text-lg">{room.name}</CardTitle>
+                      <CardDescription>容量：{room.capacity}</CardDescription>
+                    </CardHeader>
+                  </Card>
+                ))}
+              </div>
+            </div>
+
+            <Card className="h-fit">
+              <CardHeader>
+                <CardTitle>預約詳情</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-2">
+                  <Label>日期</Label>
+                  <Popover>
+                    <PopoverTrigger className={cn(buttonVariants({ variant: "outline" }), "w-full justify-start text-left font-normal")}>
+                      <CalendarIcon className="mr-2 h-4 w-4" />
+                      {bookingDate ? format(bookingDate, "PPP") : <span>選擇日期</span>}
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0">
+                      <Calendar mode="single" selected={bookingDate} onSelect={setBookingDate} initialFocus />
+                    </PopoverContent>
+                  </Popover>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="purpose">用途</Label>
+                  <Input
+                    id="purpose"
+                    placeholder="例如：詩班練習"
+                    value={bookingPurpose}
+                    onChange={(e) => setBookingPurpose(e.target.value)}
+                  />
+                </div>
+              </CardContent>
+              <CardFooter>
+                <Button className="w-full" onClick={handleBooking} disabled={!selectedRoom}>
+                  提交預約
+                </Button>
+              </CardFooter>
+            </Card>
           </div>
         </TabsContent>
 
