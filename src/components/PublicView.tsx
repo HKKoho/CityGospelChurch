@@ -340,7 +340,7 @@ export const PublicView: React.FC = () => {
               <div>
                 <h3 className="text-2xl font-heading font-bold">1cm 租借場地申請</h3>
                 <p className="text-muted-foreground text-sm">
-                  1/F, Win Century Centre, 2A Mong Kok Road, Kln.
+                  旺角道2A號 琪恆中心 一樓
                 </p>
               </div>
               <VenueApplication />
