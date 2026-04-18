@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useContext } from 'react';
 import { supabase } from '../lib/supabase';
-import { MediaItem } from '../types';
+import { MediaItem, Booking } from '../types';
+import { format, startOfMonth, endOfMonth, eachDayOfInterval, getDay, addMonths, isToday, isSameDay } from 'date-fns';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
-import { Play, Music, Image as ImageIcon, ShieldCheck, ChevronDown, LogOut } from 'lucide-react';
+import { Play, Music, Image as ImageIcon, ShieldCheck, ChevronDown, LogOut, CalendarDays } from 'lucide-react';
 import { Button } from './ui/button';
 import { motion, AnimatePresence } from 'motion/react';
 import { AuthContext } from './Auth';
@@ -33,6 +34,8 @@ export const PublicView: React.FC = () => {
   const [rollCallItems, setRollCallItems] = useState<SectionItem[]>([]);
   const [showGuidance, setShowGuidance] = useState(false);
   const [openPortal, setOpenPortal] = useState<'church' | 'service' | null>(null);
+  const [showVenueCalendar, setShowVenueCalendar] = useState(false);
+  const [venueBookings, setVenueBookings] = useState<Booking[]>([]);
   const [churchSession, setChurchSession] = useState<ChurchSession | null>(() => {
     try {
       const stored = localStorage.getItem('church_session');
@@ -337,12 +340,87 @@ export const PublicView: React.FC = () => {
             className="overflow-hidden"
           >
             <div className="space-y-6 pt-2">
-              <div>
-                <h3 className="text-2xl font-heading font-bold">1cm 租借場地申請</h3>
-                <p className="text-muted-foreground text-sm">
-                  旺角道2A號 琪恆中心 一樓
-                </p>
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-2xl font-heading font-bold">1cm 租借場地申請</h3>
+                  <p className="text-muted-foreground text-sm">
+                    旺角道2A號 琪恆中心 一樓
+                  </p>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={async () => {
+                    if (!showVenueCalendar && venueBookings.length === 0) {
+                      const { data } = await supabase
+                        .from('bookings')
+                        .select('*')
+                        .in('status', ['approved', 'pending']);
+                      if (data) setVenueBookings(data as Booking[]);
+                    }
+                    setShowVenueCalendar(v => !v);
+                  }}
+                >
+                  <CalendarDays className="w-4 h-4 mr-2" />
+                  現在場地租借情況
+                </Button>
               </div>
+
+              <AnimatePresence>
+                {showVenueCalendar && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                    transition={{ duration: 0.3, ease: 'easeInOut' }}
+                    className="overflow-hidden"
+                  >
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pb-2">
+                      {[0, 1].map(offset => {
+                        const monthStart = startOfMonth(addMonths(new Date(), offset));
+                        const monthEnd = endOfMonth(monthStart);
+                        const days = eachDayOfInterval({ start: monthStart, end: monthEnd });
+                        const startPad = getDay(monthStart);
+                        return (
+                          <div key={offset} className="border rounded-xl p-4 bg-card">
+                            <p className="font-semibold text-sm mb-3">{format(monthStart, 'yyyy 年 M 月')}</p>
+                            <div className="grid grid-cols-7 text-center text-xs text-muted-foreground mb-1">
+                              {['日','一','二','三','四','五','六'].map(d => (
+                                <div key={d} className="py-1 font-medium">{d}</div>
+                              ))}
+                            </div>
+                            <div className="grid grid-cols-7 gap-y-1">
+                              {Array.from({ length: startPad }).map((_, i) => <div key={`p${i}`} />)}
+                              {days.map(day => {
+                                const dayBookings = venueBookings.filter(b => isSameDay(new Date(b.start_time), day));
+                                const hasApproved = dayBookings.some(b => b.status === 'approved');
+                                const hasPending = dayBookings.some(b => b.status === 'pending');
+                                const today = isToday(day);
+                                return (
+                                  <div key={day.toISOString()} className={`flex flex-col items-center py-1 rounded-md text-xs ${today ? 'bg-primary/10' : ''}`}>
+                                    <span className={today ? 'font-bold text-primary' : ''}>{format(day, 'd')}</span>
+                                    {dayBookings.length > 0 && (
+                                      <div className="flex gap-0.5 mt-0.5">
+                                        {hasApproved && <div className="w-1.5 h-1.5 rounded-full bg-green-500" />}
+                                        {hasPending && <div className="w-1.5 h-1.5 rounded-full bg-yellow-500" />}
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                            <div className="flex items-center gap-4 mt-3 pt-3 border-t text-xs text-muted-foreground">
+                              <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-green-500 inline-block" />已核准</span>
+                              <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-yellow-500 inline-block" />待審核</span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
               <VenueApplication />
             </div>
           </motion.section>
