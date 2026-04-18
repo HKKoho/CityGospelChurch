@@ -10,7 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { Badge } from './ui/badge';
 import { Calendar } from './ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
-import { format } from 'date-fns';
+import { format, startOfMonth, endOfMonth, eachDayOfInterval, getDay, addMonths, isToday, isSameDay } from 'date-fns';
 import { Calendar as CalendarIcon, CheckCircle2, Clock, History, UserCheck, Monitor, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { motion } from 'motion/react';
@@ -336,6 +336,63 @@ export const CongregationView: React.FC = () => {
                 </Button>
               </CardFooter>
             </Card>
+          </div>
+          {/* Two-month booking calendar */}
+          <div>
+            <h3 className="text-xl font-bold mb-4">預約日曆</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {[0, 1].map(offset => {
+                const monthStart = startOfMonth(addMonths(new Date(), offset));
+                const monthEnd = endOfMonth(monthStart);
+                const days = eachDayOfInterval({ start: monthStart, end: monthEnd });
+                const startPad = getDay(monthStart);
+
+                return (
+                  <Card key={offset}>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-base">{format(monthStart, 'yyyy 年 M 月')}</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="grid grid-cols-7 text-center text-xs text-muted-foreground mb-1">
+                        {['日', '一', '二', '三', '四', '五', '六'].map(d => (
+                          <div key={d} className="py-1 font-medium">{d}</div>
+                        ))}
+                      </div>
+                      <div className="grid grid-cols-7 gap-y-1">
+                        {Array.from({ length: startPad }).map((_, i) => (
+                          <div key={`pad-${i}`} />
+                        ))}
+                        {days.map(day => {
+                          const dayBookings = myBookings.filter(b => isSameDay(new Date(b.start_time), day));
+                          const hasApproved = dayBookings.some(b => b.status === 'approved');
+                          const hasPending = dayBookings.some(b => b.status === 'pending');
+                          const today = isToday(day);
+
+                          return (
+                            <div
+                              key={day.toISOString()}
+                              className={`flex flex-col items-center py-1 rounded-md text-xs ${today ? 'bg-primary/10' : ''}`}
+                            >
+                              <span className={today ? 'font-bold text-primary' : ''}>{format(day, 'd')}</span>
+                              {dayBookings.length > 0 && (
+                                <div className="flex gap-0.5 mt-0.5">
+                                  {hasApproved && <div className="w-1.5 h-1.5 rounded-full bg-green-500" />}
+                                  {hasPending && <div className="w-1.5 h-1.5 rounded-full bg-yellow-500" />}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                      <div className="flex items-center gap-4 mt-3 pt-3 border-t text-xs text-muted-foreground">
+                        <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-green-500 inline-block" />已核准</span>
+                        <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-yellow-500 inline-block" />待審核</span>
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
           </div>
         </TabsContent>
 
