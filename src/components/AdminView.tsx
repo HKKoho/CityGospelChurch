@@ -1,5 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { supabase } from '../lib/supabase';
+import {
+  users as usersApi,
+  bookings as bookingsApi,
+  rooms as roomsApi,
+  media as mediaApi,
+  worksheet as worksheetApi,
+  attendance as attendanceApi,
+  sessions as sessionsApi,
+  poll,
+} from '../lib/api';
 import { UserProfile, Booking, Room, MediaItem, WorksheetEntry, AttendanceRecord, Session } from '../types';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
@@ -26,28 +35,18 @@ export const AdminView: React.FC = () => {
 
   const seedData = async () => {
     try {
-      // Seed Rooms
-      const { error: roomsError } = await supabase.from('rooms').insert([
-        { name: '聖殿', capacity: 500, description: '配備高端音響的主要敬拜大廳。', image_url: 'https://picsum.photos/seed/sanctuary/800/600' },
-        { name: '青年廳', capacity: 100, description: '充滿活力的青年活動空間。', image_url: 'https://picsum.photos/seed/youth/800/600' },
-        { name: '會議室 A', capacity: 20, description: '適合小組聚會的安靜空間。', image_url: 'https://picsum.photos/seed/meeting/800/600' },
-      ]);
-      if (roomsError) throw roomsError;
+      await roomsApi.create({ name: '聖殿', capacity: 500, description: '配備高端音響的主要敬拜大廳。', image_url: 'https://picsum.photos/seed/sanctuary/800/600' });
+      await roomsApi.create({ name: '青年廳', capacity: 100, description: '充滿活力的青年活動空間。', image_url: 'https://picsum.photos/seed/youth/800/600' });
+      await roomsApi.create({ name: '會議室 A', capacity: 20, description: '適合小組聚會的安靜空間。', image_url: 'https://picsum.photos/seed/meeting/800/600' });
 
-      // Seed Media
-      const { error: mediaError } = await supabase.from('media').insert([
-        { title: '主日崇拜 - 盼望', type: 'video', url: 'https://example.com/video1', description: '一篇關於在困境中尋找盼望的有力信息。', category: '講道', created_at: new Date().toISOString() },
-        { title: '敬拜組曲 - 晨恩', type: 'audio', url: 'https://example.com/audio1', description: '詩班的早晨敬拜聚會。', category: '敬拜', created_at: new Date().toISOString() },
-      ]);
-      if (mediaError) throw mediaError;
+      await mediaApi.create({ title: '主日崇拜 - 盼望', type: 'video', url: 'https://example.com/video1', description: '一篇關於在困境中尋找盼望的有力信息。', category: '講道' });
+      await mediaApi.create({ title: '敬拜組曲 - 晨恩', type: 'audio', url: 'https://example.com/audio1', description: '詩班的早晨敬拜聚會。', category: '敬拜' });
 
-      // Seed Worksheet
-      const { error: worksheetError } = await supabase.from('worksheet').insert([
+      await worksheetApi.create([
         { name: '張三', last_four_digits: '1234' },
         { name: '李四', last_four_digits: '5678' },
         { name: '王五', last_four_digits: '9012' },
       ]);
-      if (worksheetError) throw worksheetError;
 
       toast.success("範例資料已成功建立！");
     } catch (error) {
@@ -75,119 +74,78 @@ export const AdminView: React.FC = () => {
   const [newRollCall, setNewRollCall] = useState({ title: '', url: '', description: '' });
 
   useEffect(() => {
-    // Fetch initial data for all tables
     const fetchAll = async () => {
-      const [usersRes, bookingsRes, roomsRes, mediaRes, worksheetRes, attendanceRes] = await Promise.all([
-        supabase.from('users').select('*'),
-        supabase.from('bookings').select('*'),
-        supabase.from('rooms').select('*'),
-        supabase.from('media').select('*'),
-        supabase.from('worksheet').select('*'),
-        supabase.from('attendance').select('*'),
-      ]);
-      if (usersRes.data) setUsers(usersRes.data as UserProfile[]);
-      if (bookingsRes.data) setBookings(bookingsRes.data as Booking[]);
-      if (roomsRes.data) setRooms(roomsRes.data as Room[]);
-      if (mediaRes.data) setMedia(mediaRes.data as MediaItem[]);
-      if (worksheetRes.data) setWorksheet(worksheetRes.data as WorksheetEntry[]);
-      if (attendanceRes.data) setAttendance(attendanceRes.data as AttendanceRecord[]);
+      try {
+        const [usersData, bookingsData, roomsData, mediaData, worksheetData, attendanceData] = await Promise.all([
+          usersApi.list(),
+          bookingsApi.list(),
+          roomsApi.list(),
+          mediaApi.list(),
+          worksheetApi.list(),
+          attendanceApi.list(),
+        ]);
+        setUsers(usersData as UserProfile[]);
+        setBookings(bookingsData as Booking[]);
+        setRooms(roomsData as Room[]);
+        setMedia(mediaData as MediaItem[]);
+        setWorksheet(worksheetData as WorksheetEntry[]);
+        setAttendance(attendanceData as AttendanceRecord[]);
+      } catch (err) {
+        console.error('Failed to fetch admin data:', err);
+      }
     };
-    fetchAll();
 
-    // Fetch section content
     const fetchSections = async () => {
-      const [worshipRes, devotionRes, rollCallRes] = await Promise.all([
-        supabase.from('media').select('*').eq('category', 'worship_youtube'),
-        supabase.from('media').select('*').eq('category', 'devotion'),
-        supabase.from('media').select('*').eq('category', 'roll_call'),
-      ]);
-      if (worshipRes.data) setWorshipItems(worshipRes.data as MediaItem[]);
-      if (devotionRes.data) setDevotionItems(devotionRes.data as MediaItem[]);
-      if (rollCallRes.data) setRollCallItems(rollCallRes.data as MediaItem[]);
+      try {
+        const [worshipData, devotionData, rollCallData] = await Promise.all([
+          mediaApi.list('worship_youtube'),
+          mediaApi.list('devotion'),
+          mediaApi.list('roll_call'),
+        ]);
+        setWorshipItems(worshipData as MediaItem[]);
+        setDevotionItems(devotionData as MediaItem[]);
+        setRollCallItems(rollCallData as MediaItem[]);
+      } catch (err) {
+        console.error('Failed to fetch sections:', err);
+      }
     };
-    fetchSections();
 
-    // Real-time subscriptions for all tables
-    const channels = [
-      { name: 'admin-users', table: 'users', setter: setUsers },
-      { name: 'admin-bookings', table: 'bookings', setter: setBookings },
-      { name: 'admin-rooms', table: 'rooms', setter: setRooms },
-      { name: 'admin-media', table: 'media', setter: (data: any) => {
-        setMedia(data);
-        // Also refresh section content
-        supabase.from('media').select('*').eq('category', 'worship_youtube').then(({ data: d }) => { if (d) setWorshipItems(d as MediaItem[]); });
-        supabase.from('media').select('*').eq('category', 'devotion').then(({ data: d }) => { if (d) setDevotionItems(d as MediaItem[]); });
-        supabase.from('media').select('*').eq('category', 'roll_call').then(({ data: d }) => { if (d) setRollCallItems(d as MediaItem[]); });
-      } },
-      { name: 'admin-worksheet', table: 'worksheet', setter: setWorksheet },
-      { name: 'admin-attendance', table: 'attendance', setter: setAttendance },
-    ].map(({ name, table, setter }) =>
-      supabase
-        .channel(name)
-        .on('postgres_changes', { event: '*', schema: 'public', table }, () => {
-          supabase.from(table).select('*').then(({ data }) => {
-            if (data) setter(data as any);
-          });
-        })
-        .subscribe()
-    );
-
-    // Fetch active session
     const fetchSession = async () => {
-      const { data } = await supabase.from('sessions').select('*').eq('is_active', true).limit(1);
-      if (data && data.length > 0) setActiveSession(data[0] as Session);
-      else setActiveSession(null);
+      try {
+        const data = await sessionsApi.getActive();
+        if (data && data.length > 0) setActiveSession(data[0] as Session);
+        else setActiveSession(null);
+      } catch {
+        setActiveSession(null);
+      }
     };
-    fetchSession();
 
-    const sessionChannel = supabase
-      .channel('admin-sessions')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'sessions' }, () => {
-        fetchSession();
-      })
-      .subscribe();
-
-    return () => {
-      channels.forEach((ch) => supabase.removeChannel(ch));
-      supabase.removeChannel(sessionChannel);
-    };
+    // Poll for updates (replaces Supabase Realtime)
+    const stopAll = poll(() => { fetchAll(); fetchSections(); fetchSession(); }, 10000);
+    return stopAll;
   }, []);
 
-  // Real-time attendance for active session
+  // Fetch session attendance when active session changes
   useEffect(() => {
     if (!activeSession) { setSessionAttendance([]); return; }
 
     const fetchSessionAttendance = async () => {
-      const { data } = await supabase
-        .from('attendance')
-        .select('*')
-        .eq('session_id', activeSession.id)
-        .order('created_at', { ascending: false });
-      if (data) setSessionAttendance(data as AttendanceRecord[]);
+      try {
+        const data = await attendanceApi.list({ session_id: activeSession.id });
+        setSessionAttendance(data as AttendanceRecord[]);
+      } catch {
+        // ignore
+      }
     };
-    fetchSessionAttendance();
 
-    const channel = supabase
-      .channel('admin-session-attendance')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'attendance' }, () => {
-        fetchSessionAttendance();
-      })
-      .subscribe();
-
-    return () => { supabase.removeChannel(channel); };
+    const stop = poll(fetchSessionAttendance, 5000);
+    return stop;
   }, [activeSession?.id]);
 
   const handleStartSession = async () => {
     if (!sessionName.trim()) { toast.error('請輸入活動名稱。'); return; }
     try {
-      // Deactivate all existing sessions
-      await supabase.from('sessions').update({ is_active: false }).eq('is_active', true);
-      // Create new active session
-      const { error } = await supabase.from('sessions').insert({
-        name: sessionName.trim(),
-        is_active: true,
-      });
-      if (error) throw error;
+      await sessionsApi.start(sessionName.trim());
       toast.success('點名活動已啟用。');
       setSessionName('');
     } catch {
@@ -198,8 +156,7 @@ export const AdminView: React.FC = () => {
   const handleStopSession = async () => {
     if (!activeSession) return;
     try {
-      const { error } = await supabase.from('sessions').update({ is_active: false }).eq('id', activeSession.id);
-      if (error) throw error;
+      await sessionsApi.stop(activeSession.id);
       toast.success('點名活動已停止。');
     } catch {
       toast.error('停止點名失敗。');
@@ -213,11 +170,9 @@ export const AdminView: React.FC = () => {
     const reader = new FileReader();
     reader.onload = async (event) => {
       const text = event.target?.result as string;
-      // Remove BOM if present
       const clean = text.replace(/^\uFEFF/, '');
       const lines = clean.split(/\r?\n/).filter(line => line.trim());
 
-      // Skip header if it looks like one
       const startIndex = lines[0]?.match(/姓名|name|名/i) ? 1 : 0;
 
       const entries: { name: string; last_four_digits: string; department?: string }[] = [];
@@ -238,22 +193,19 @@ export const AdminView: React.FC = () => {
       }
 
       try {
-        const { error } = await supabase.from('worksheet').insert(entries);
-        if (error) throw error;
+        await worksheetApi.create(entries);
         toast.success(`已匯入 ${entries.length} 筆參與者資料。`);
       } catch {
         toast.error('匯入失敗。');
       }
     };
     reader.readAsText(file, 'utf-8');
-    // Reset file input
     e.target.value = '';
   };
 
   const handleUpdateUserRole = async (uid: string, role: string) => {
     try {
-      const { error } = await supabase.from('users').update({ role }).eq('uid', uid);
-      if (error) throw error;
+      await usersApi.updateRole(uid, role);
       toast.success("使用者角色已更新。");
     } catch (error) {
       toast.error("更新角色失敗。");
@@ -262,8 +214,7 @@ export const AdminView: React.FC = () => {
 
   const handleBookingAction = async (id: string, status: 'approved' | 'rejected') => {
     try {
-      const { error } = await supabase.from('bookings').update({ status }).eq('id', id);
-      if (error) throw error;
+      await bookingsApi.updateStatus(id, status);
       toast.success(`預約已${status === 'approved' ? '核准' : '拒絕'}。`);
     } catch (error) {
       toast.error("更新預約失敗。");
@@ -272,8 +223,7 @@ export const AdminView: React.FC = () => {
 
   const handleAddRoom = async () => {
     try {
-      const { error } = await supabase.from('rooms').insert(newRoom);
-      if (error) throw error;
+      await roomsApi.create(newRoom);
       toast.success("場地已新增。");
       setNewRoom({ name: '', capacity: 0, description: '', image_url: '' });
     } catch (error) {
@@ -283,8 +233,7 @@ export const AdminView: React.FC = () => {
 
   const handleAddMedia = async () => {
     try {
-      const { error } = await supabase.from('media').insert({ ...newMedia, created_at: new Date().toISOString() });
-      if (error) throw error;
+      await mediaApi.create({ ...newMedia });
       toast.success("媒體已新增。");
       setNewMedia({ title: '', type: 'video', url: '', description: '', category: '' });
     } catch (error) {
@@ -298,15 +247,13 @@ export const AdminView: React.FC = () => {
       return;
     }
     try {
-      const { error } = await supabase.from('media').insert({
+      await mediaApi.create({
         title: item.title,
         type: 'video',
         url: item.url,
         description: item.description,
         category,
-        created_at: new Date().toISOString(),
       });
-      if (error) throw error;
       toast.success("內容已新增。");
       resetFn();
     } catch (error) {
@@ -316,8 +263,7 @@ export const AdminView: React.FC = () => {
 
   const handleAddWorksheet = async () => {
     try {
-      const { error } = await supabase.from('worksheet').insert(newWorksheet);
-      if (error) throw error;
+      await worksheetApi.create(newWorksheet);
       toast.success("工作表項目已新增。");
       setNewWorksheet({ name: '', last_four_digits: '', department: '' });
     } catch (error) {
@@ -328,9 +274,11 @@ export const AdminView: React.FC = () => {
   const handleDelete = async (table: string, id: string) => {
     if (!confirm("確定要刪除此項目嗎？")) return;
     try {
-      const column = table === 'users' ? 'uid' : 'id';
-      const { error } = await supabase.from(table).delete().eq(column, id);
-      if (error) throw error;
+      if (table === 'users') await usersApi.remove(id);
+      else if (table === 'rooms') await roomsApi.remove(id);
+      else if (table === 'media') await mediaApi.remove(id);
+      else if (table === 'bookings') await bookingsApi.remove(id);
+      else if (table === 'worksheet') await worksheetApi.remove(id);
       toast.success("已成功刪除。");
     } catch (error) {
       toast.error("刪除失敗。");
@@ -367,9 +315,7 @@ export const AdminView: React.FC = () => {
 
         <TabsContent value="rollcall-control">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {/* Left: Session Control + Participants */}
             <div className="space-y-6">
-              {/* Session Control */}
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
@@ -424,7 +370,6 @@ export const AdminView: React.FC = () => {
                 </CardFooter>
               </Card>
 
-              {/* CSV Import */}
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
@@ -452,7 +397,6 @@ export const AdminView: React.FC = () => {
                 </CardContent>
               </Card>
 
-              {/* Quick participant count */}
               <Card>
                 <CardContent className="p-4">
                   <div className="flex items-center justify-between">
@@ -463,7 +407,6 @@ export const AdminView: React.FC = () => {
               </Card>
             </div>
 
-            {/* Right: Real-time Attendance Log */}
             <div className="md:col-span-2">
               <Card className="h-full">
                 <CardHeader>
@@ -536,10 +479,9 @@ export const AdminView: React.FC = () => {
 
         <TabsContent value="homepage">
           <div className="space-y-8">
-            {/* 崇拜YouTube Section */}
             {(() => {
               const now = new Date();
-              const weekStart = startOfWeek(now, { weekStartsOn: 1 }); // Monday
+              const weekStart = startOfWeek(now, { weekStartsOn: 1 });
               const weekEnd = endOfWeek(now, { weekStartsOn: 1 });
 
               const currentWeekItem = worshipItems.find((item) => {
@@ -568,7 +510,6 @@ export const AdminView: React.FC = () => {
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-6">
-                    {/* Current Week */}
                     <div>
                       <h4 className="font-bold text-lg mb-3 flex items-center gap-2">
                         <Badge className="bg-green-500">本週</Badge>
@@ -619,7 +560,6 @@ export const AdminView: React.FC = () => {
                       )}
                     </div>
 
-                    {/* Archive Table */}
                     <div>
                       <h4 className="font-bold text-lg mb-3 flex items-center gap-2">
                         <Badge variant="secondary">歷史存檔</Badge>
@@ -662,7 +602,6 @@ export const AdminView: React.FC = () => {
               );
             })()}
 
-            {/* 靈修日程 Section */}
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
@@ -728,7 +667,6 @@ export const AdminView: React.FC = () => {
               </CardContent>
             </Card>
 
-            {/* 參與記名 Section */}
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
@@ -860,7 +798,7 @@ export const AdminView: React.FC = () => {
                 <TableHeader>
                   <TableRow>
                     <TableHead>姓名</TableHead>
-                    <TableHead>電子郵件</TableHead>
+                    <TableHead>帳號</TableHead>
                     <TableHead>角色</TableHead>
                     <TableHead className="text-right">操作</TableHead>
                   </TableRow>
@@ -869,7 +807,7 @@ export const AdminView: React.FC = () => {
                   {users.map((user) => (
                     <TableRow key={user.uid}>
                       <TableCell className="font-medium">{user.name}</TableCell>
-                      <TableCell>{user.email}</TableCell>
+                      <TableCell>{(user as any).username || user.email}</TableCell>
                       <TableCell>
                         <Select value={user.role} onValueChange={(val) => handleUpdateUserRole(user.uid, val)}>
                           <SelectTrigger className="w-[140px]">

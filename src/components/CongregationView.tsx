@@ -1,5 +1,12 @@
 import React, { useState, useEffect, useContext } from 'react';
-import { supabase } from '../lib/supabase';
+import {
+  rooms as roomsApi,
+  bookings as bookingsApi,
+  attendance as attendanceApi,
+  worksheet as worksheetApi,
+  sessions as sessionsApi,
+  poll,
+} from '../lib/api';
 import { AuthContext } from './Auth';
 import { Room, Booking, AttendanceRecord, WorksheetEntry, Session } from '../types';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from './ui/card';
@@ -39,74 +46,34 @@ export const CongregationView: React.FC = () => {
   useEffect(() => {
     if (!profile) return;
 
-    // Fetch initial data
     const fetchData = async () => {
-      const [roomsRes, bookingsRes, attendanceRes] = await Promise.all([
-        supabase.from('rooms').select('*'),
-        supabase.from('bookings').select('*').eq('user_id', profile.uid),
-        supabase.from('attendance').select('*').eq('user_id', profile.uid),
-      ]);
-      if (roomsRes.data) setRooms(roomsRes.data as Room[]);
-      if (bookingsRes.data) setMyBookings(bookingsRes.data as Booking[]);
-      if (attendanceRes.data) setMyAttendance(attendanceRes.data as AttendanceRecord[]);
+      try {
+        const [roomsData, bookingsData, attendanceData] = await Promise.all([
+          roomsApi.list(),
+          bookingsApi.list(),
+          attendanceApi.list(),
+        ]);
+        setRooms(roomsData as Room[]);
+        setMyBookings(bookingsData as Booking[]);
+        setMyAttendance(attendanceData as AttendanceRecord[]);
+      } catch (err) {
+        console.error('Failed to fetch congregation data:', err);
+      }
     };
-    fetchData();
 
-    // Real-time subscriptions
-    const roomsChannel = supabase
-      .channel('congregation-rooms')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'rooms' }, () => {
-        supabase.from('rooms').select('*').then(({ data }) => {
-          if (data) setRooms(data as Room[]);
-        });
-      })
-      .subscribe();
-
-    const bookingsChannel = supabase
-      .channel('congregation-bookings')
-      .on('postgres_changes', {
-        event: '*', schema: 'public', table: 'bookings',
-        filter: `user_id=eq.${profile.uid}`,
-      }, () => {
-        supabase.from('bookings').select('*').eq('user_id', profile.uid).then(({ data }) => {
-          if (data) setMyBookings(data as Booking[]);
-        });
-      })
-      .subscribe();
-
-    const attendanceChannel = supabase
-      .channel('congregation-attendance')
-      .on('postgres_changes', {
-        event: '*', schema: 'public', table: 'attendance',
-        filter: `user_id=eq.${profile.uid}`,
-      }, () => {
-        supabase.from('attendance').select('*').eq('user_id', profile.uid).then(({ data }) => {
-          if (data) setMyAttendance(data as AttendanceRecord[]);
-        });
-      })
-      .subscribe();
-
-    // Fetch active session
     const fetchSession = async () => {
-      const { data } = await supabase.from('sessions').select('*').eq('is_active', true).limit(1);
-      if (data && data.length > 0) setActiveSession(data[0] as Session);
-      else setActiveSession(null);
+      try {
+        const data = await sessionsApi.getActive();
+        if (data && data.length > 0) setActiveSession(data[0] as Session);
+        else setActiveSession(null);
+      } catch {
+        setActiveSession(null);
+      }
     };
-    fetchSession();
 
-    const sessionChannel = supabase
-      .channel('congregation-sessions')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'sessions' }, () => {
-        fetchSession();
-      })
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(roomsChannel);
-      supabase.removeChannel(bookingsChannel);
-      supabase.removeChannel(attendanceChannel);
-      supabase.removeChannel(sessionChannel);
-    };
+    // Poll for updates (replaces Supabase Realtime)
+    const stop = poll(() => { fetchData(); fetchSession(); }, 10000);
+    return stop;
   }, [profile]);
 
   const handleRollCall = async () => {
@@ -118,49 +85,35 @@ export const CongregationView: React.FC = () => {
     setIsCheckingRoll(true);
     try {
       // 1. Check Worksheet for mapping
-      const { data: worksheetData, error: worksheetError } = await supabase
-        .from('worksheet')
-        .select('*')
-        .eq('last_four_digits', lastFour)
-        .limit(1);
+      const worksheetData = await worksheetApi.lookup(lastFour);
 
-      if (worksheetError || !worksheetData || worksheetData.length === 0) {
+      if (!worksheetData || worksheetData.length === 0) {
         toast.error("在工作表中找不到此號碼的記錄。");
         setIsCheckingRoll(false);
         return;
       }
 
       const entry = worksheetData[0] as WorksheetEntry;
-
-      // 2. Verify if it matches user's name (basic check)
       toast.info(`找到記錄：${entry.name}`);
 
-      // 3. Record Attendance
+      // 2. Record Attendance
       const today = format(new Date(), 'yyyy-MM-dd');
 
-      // Check if already recorded today
-      const { data: todayData } = await supabase
-        .from('attendance')
-        .select('id')
-        .eq('user_id', profile.uid)
-        .eq('date', today);
-
-      if (todayData && todayData.length > 0) {
-        toast.warning("今日出席已記錄。");
-      } else {
-        const { error: insertError } = await supabase
-          .from('attendance')
-          .insert({
-            user_id: profile.uid,
-            user_name: profile.name,
-            date: today,
-            last_four_digits: lastFour,
-            status: 'present',
-            session_id: activeSession?.id || null,
-            created_at: new Date().toISOString(),
-          });
-        if (insertError) throw insertError;
+      try {
+        await attendanceApi.create({
+          date: today,
+          user_name: profile.name,
+          last_four_digits: lastFour,
+          status: 'present',
+          session_id: activeSession?.id || null,
+        });
         toast.success("點名成功！歡迎。");
+      } catch (err: any) {
+        if (err.message?.includes('Already')) {
+          toast.warning("今日出席已記錄。");
+        } else {
+          throw err;
+        }
       }
       setLastFour('');
     } catch (error) {
@@ -178,18 +131,14 @@ export const CongregationView: React.FC = () => {
     }
 
     try {
-      const { error } = await supabase.from('bookings').insert({
+      await bookingsApi.create({
         room_id: selectedRoom.id,
         room_name: selectedRoom.name,
-        user_id: profile.uid,
         user_name: profile.name,
         start_time: bookingDate.toISOString(),
-        end_time: new Date(bookingDate.getTime() + 2 * 60 * 60 * 1000).toISOString(), // Default 2 hours
-        status: 'pending',
+        end_time: new Date(bookingDate.getTime() + 2 * 60 * 60 * 1000).toISOString(),
         purpose: bookingPurpose,
-        created_at: new Date().toISOString(),
       });
-      if (error) throw error;
       toast.success("預約申請已送出！");
       setSelectedRoom(null);
       setBookingPurpose('');
@@ -228,7 +177,6 @@ export const CongregationView: React.FC = () => {
         </TabsList>
 
         <TabsContent value="rollcall">
-          {/* Session status banner */}
           {activeSession ? (
             <div className="flex items-center justify-center gap-2 mb-4 p-3 rounded-lg bg-green-500/10 border border-green-500/20">
               <Badge className="bg-green-500 animate-pulse">進行中</Badge>

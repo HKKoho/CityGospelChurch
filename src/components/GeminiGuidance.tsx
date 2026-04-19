@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { gemini } from '../lib/api';
 import { Button } from './ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Sparkles, Loader2 } from 'lucide-react';
@@ -12,9 +13,7 @@ export const GeminiGuidance: React.FC = () => {
   const generateGuidance = async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/gemini/guidance', { method: 'POST' });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
+      const data = await gemini.guidance();
       setGuidance(data.text);
     } catch (error) {
       console.error("Gemini error:", error);

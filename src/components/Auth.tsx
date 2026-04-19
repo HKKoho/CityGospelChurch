@@ -1,14 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { supabase } from '../lib/supabase';
+import { auth, poll } from '../lib/api';
 import { UserProfile, UserRole } from '../types';
 import { Button } from './ui/button';
+import { Input } from './ui/input';
+import { Label } from './ui/label';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from './ui/card';
 import { LogIn, Church } from 'lucide-react';
 import { toast } from 'sonner';
-import type { User } from '@supabase/supabase-js';
 
 interface AuthContextType {
-  user: User | null;
+  user: UserProfile | null;
   profile: UserProfile | null;
   loading: boolean;
   signIn: () => Promise<void>;
@@ -24,125 +25,51 @@ export const AuthContext = React.createContext<AuthContextType>({
 });
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [showLogin, setShowLogin] = useState(false);
 
+  // Check existing session on mount
   useEffect(() => {
-    // Get initial session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      const currentUser = session?.user ?? null;
-      setUser(currentUser);
-      if (currentUser) {
-        fetchOrCreateProfile(currentUser);
-      } else {
-        setLoading(false);
-      }
-    });
+    auth.session()
+      .then(({ user }) => {
+        setProfile(user as UserProfile | null);
+      })
+      .catch(() => setProfile(null))
+      .finally(() => setLoading(false));
 
-    // Listen for auth state changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (_event, session) => {
-        const currentUser = session?.user ?? null;
-        setUser(currentUser);
-        if (currentUser) {
-          fetchOrCreateProfile(currentUser);
-        } else {
-          setProfile(null);
-          setLoading(false);
-        }
+    // Poll for profile updates (e.g. role changes by admin) every 30s
+    const stop = poll(async () => {
+      try {
+        const { user } = await auth.session();
+        setProfile(user as UserProfile | null);
+      } catch {
+        // ignore
       }
-    );
+    }, 30000);
 
-    return () => {
-      subscription.unsubscribe();
-    };
+    return stop;
   }, []);
 
-  // Subscribe to real-time profile updates when user changes
-  useEffect(() => {
-    if (!user) return;
-
-    const channel = supabase
-      .channel(`profile-${user.id}`)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'users',
-          filter: `uid=eq.${user.id}`,
-        },
-        (payload) => {
-          if (payload.eventType === 'DELETE') {
-            setProfile(null);
-          } else {
-            setProfile(payload.new as UserProfile);
-          }
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [user?.id]);
-
-  const fetchOrCreateProfile = async (authUser: User) => {
-    try {
-      const { data, error } = await supabase
-        .from('users')
-        .select('*')
-        .eq('uid', authUser.id)
-        .single();
-
-      if (error && error.code === 'PGRST116') {
-        // Profile not found — create a new one
-        const newProfile: UserProfile = {
-          uid: authUser.id,
-          name: authUser.user_metadata?.full_name || authUser.email || 'User',
-          email: authUser.email || '',
-          role: 'public',
-          created_at: new Date().toISOString(),
-        };
-        const { error: insertError } = await supabase
-          .from('users')
-          .insert(newProfile);
-        if (insertError) {
-          console.error('Profile creation error:', insertError);
-          toast.error('建立個人資料失敗。');
-        }
-        setProfile(newProfile);
-      } else if (error) {
-        console.error('Profile fetch error:', error);
-      } else {
-        setProfile(data as UserProfile);
-      }
-    } catch (err) {
-      console.error('Profile error:', err);
-    } finally {
-      setLoading(false);
-    }
+  const signIn = async () => {
+    setShowLogin(true);
   };
 
-  const signIn = async () => {
+  const handleLogin = async (username: string, password: string) => {
     try {
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: {
-          redirectTo: window.location.origin,
-        },
-      });
-      if (error) throw error;
-    } catch (error) {
-      console.error('Sign in error:', error);
-      toast.error('登入失敗。');
+      const { user } = await auth.login(username, password);
+      setProfile(user as UserProfile);
+      setShowLogin(false);
+      toast.success('登入成功。');
+    } catch (error: any) {
+      toast.error(error.message || '登入失敗。');
     }
   };
 
   const logout = async () => {
     try {
-      await supabase.auth.signOut();
+      await auth.logout();
+      setProfile(null);
       toast.success('已成功登出。');
     } catch (error) {
       console.error('Logout error:', error);
@@ -151,9 +78,80 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   return (
-    <AuthContext.Provider value={{ user, profile, loading, signIn, logout }}>
+    <AuthContext.Provider value={{ user: profile, profile, loading, signIn, logout }}>
+      {showLogin && !profile && (
+        <LoginModal
+          onLogin={handleLogin}
+          onCancel={() => setShowLogin(false)}
+        />
+      )}
       {children}
     </AuthContext.Provider>
+  );
+};
+
+// Login modal component
+const LoginModal: React.FC<{
+  onLogin: (username: string, password: string) => void;
+  onCancel: () => void;
+}> = ({ onLogin, onCancel }) => {
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!username || !password) return;
+    setSubmitting(true);
+    try {
+      await onLogin(username, password);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[100] bg-black/50 flex items-center justify-center p-4">
+      <Card className="w-full max-w-sm">
+        <form onSubmit={handleSubmit}>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <LogIn className="w-5 h-5" />
+              登入
+            </CardTitle>
+            <CardDescription>請輸入您的帳號密碼。</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="username">帳號</Label>
+              <Input
+                id="username"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                autoFocus
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="password">密碼</Label>
+              <Input
+                id="password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+              />
+            </div>
+          </CardContent>
+          <CardFooter className="flex gap-2">
+            <Button type="submit" className="flex-1" disabled={submitting}>
+              {submitting ? '登入中...' : '登入'}
+            </Button>
+            <Button type="button" variant="outline" onClick={onCancel}>
+              取消
+            </Button>
+          </CardFooter>
+        </form>
+      </Card>
+    </div>
   );
 };
 
@@ -177,7 +175,7 @@ export const AuthGuard: React.FC<{ children: React.ReactNode; allowedRoles?: Use
           <CardContent className="flex justify-center py-6">
             <Button onClick={signIn} size="lg" className="w-full">
               <LogIn className="w-4 h-4 mr-2" />
-              使用 Google 登入
+              登入
             </Button>
           </CardContent>
           <CardFooter className="text-xs text-center text-muted-foreground">

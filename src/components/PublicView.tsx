@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useContext } from 'react';
-import { supabase } from '../lib/supabase';
+import { media as mediaApi, rooms as roomsApi, poll } from '../lib/api';
 import { MediaItem, Room } from '../types';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
@@ -32,70 +32,34 @@ export const PublicView: React.FC = () => {
   const [rollCallItems, setRollCallItems] = useState<SectionItem[]>([]);
 
   useEffect(() => {
-    // Fetch initial data
-    const fetchData = async () => {
-      const [mediaRes, roomsRes] = await Promise.all([
-        supabase.from('media').select('*').limit(6),
-        supabase.from('rooms').select('*').limit(4),
-      ]);
-      if (mediaRes.data) setMedia(mediaRes.data as MediaItem[]);
-      if (roomsRes.data) setRooms(roomsRes.data as Room[]);
+    const fetchAll = async () => {
+      try {
+        const [mediaData, roomsData, worshipData, devotionData, rollCallData] = await Promise.all([
+          mediaApi.list(undefined, 6),
+          roomsApi.list(4),
+          mediaApi.list('worship_youtube'),
+          mediaApi.list('devotion'),
+          mediaApi.list('roll_call'),
+        ]);
+        setMedia(mediaData as MediaItem[]);
+        setRooms(roomsData as Room[]);
+        setWorshipItems(worshipData as SectionItem[]);
+        setDevotionItems(devotionData as SectionItem[]);
+        setRollCallItems(rollCallData as SectionItem[]);
+      } catch (err) {
+        console.error('Failed to fetch public data:', err);
+      }
     };
-    fetchData();
 
-    // Fetch section content
-    const fetchSections = async () => {
-      const [worshipRes, devotionRes, rollCallRes] = await Promise.all([
-        supabase.from('media').select('*').eq('category', 'worship_youtube'),
-        supabase.from('media').select('*').eq('category', 'devotion'),
-        supabase.from('media').select('*').eq('category', 'roll_call'),
-      ]);
-      if (worshipRes.data) setWorshipItems(worshipRes.data as SectionItem[]);
-      if (devotionRes.data) setDevotionItems(devotionRes.data as SectionItem[]);
-      if (rollCallRes.data) setRollCallItems(rollCallRes.data as SectionItem[]);
-    };
-    fetchSections();
-
-    // Subscribe to real-time changes
-    const mediaChannel = supabase
-      .channel('public-media')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'media' }, () => {
-        supabase.from('media').select('*').limit(6).then(({ data }) => {
-          if (data) setMedia(data as MediaItem[]);
-        });
-        // Refresh section content
-        supabase.from('media').select('*').eq('category', 'worship_youtube').then(({ data }) => {
-          if (data) setWorshipItems(data as SectionItem[]);
-        });
-        supabase.from('media').select('*').eq('category', 'devotion').then(({ data }) => {
-          if (data) setDevotionItems(data as SectionItem[]);
-        });
-        supabase.from('media').select('*').eq('category', 'roll_call').then(({ data }) => {
-          if (data) setRollCallItems(data as SectionItem[]);
-        });
-      })
-      .subscribe();
-
-    const roomsChannel = supabase
-      .channel('public-rooms')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'rooms' }, () => {
-        supabase.from('rooms').select('*').limit(4).then(({ data }) => {
-          if (data) setRooms(data as Room[]);
-        });
-      })
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(mediaChannel);
-      supabase.removeChannel(roomsChannel);
-    };
+    // Poll every 15s for updates (replaces Supabase Realtime)
+    const stop = poll(fetchAll, 15000);
+    return stop;
   }, []);
 
   const handleAdminAccess = () => {
     if (profile && profile.role === 'admin') {
       window.dispatchEvent(new CustomEvent('navigate', { detail: { tab: 'admin' } }));
     } else if (profile) {
-      // Logged in but not admin
       window.dispatchEvent(new CustomEvent('navigate', { detail: { tab: 'admin' } }));
     } else {
       signIn();

@@ -1,5 +1,10 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { supabase } from '../lib/supabase';
+import {
+  sessions as sessionsApi,
+  attendance as attendanceApi,
+  worksheet as worksheetApi,
+  poll,
+} from '../lib/api';
 import { Session, WorksheetEntry, AttendanceRecord } from '../types';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
@@ -26,55 +31,37 @@ export const KioskMode: React.FC = () => {
   const recognitionRef = useRef<any>(null);
   const countdownRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Fetch active session
+  // Fetch active session with polling
   useEffect(() => {
     const fetchSession = async () => {
-      const { data } = await supabase
-        .from('sessions')
-        .select('*')
-        .eq('is_active', true)
-        .limit(1);
-      if (data && data.length > 0) setActiveSession(data[0] as Session);
-      else setActiveSession(null);
+      try {
+        const data = await sessionsApi.getActive();
+        if (data && data.length > 0) setActiveSession(data[0] as Session);
+        else setActiveSession(null);
+      } catch {
+        setActiveSession(null);
+      }
     };
-    fetchSession();
 
-    const channel = supabase
-      .channel('kiosk-sessions')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'sessions' }, () => {
-        fetchSession();
-      })
-      .subscribe();
-
-    return () => { supabase.removeChannel(channel); };
+    const stop = poll(fetchSession, 5000);
+    return stop;
   }, []);
 
-  // Fetch today's attendance for the active session
+  // Fetch today's attendance for the active session with polling
   useEffect(() => {
     if (!activeSession) return;
 
     const fetchAttendance = async () => {
-      const { data } = await supabase
-        .from('attendance')
-        .select('*')
-        .eq('session_id', activeSession.id)
-        .order('created_at', { ascending: false });
-      if (data) setTodayAttendance(data as AttendanceRecord[]);
+      try {
+        const data = await attendanceApi.list({ session_id: activeSession.id });
+        setTodayAttendance(data as AttendanceRecord[]);
+      } catch {
+        // ignore
+      }
     };
-    fetchAttendance();
 
-    const channel = supabase
-      .channel('kiosk-attendance')
-      .on('postgres_changes', {
-        event: 'INSERT',
-        schema: 'public',
-        table: 'attendance',
-      }, () => {
-        fetchAttendance();
-      })
-      .subscribe();
-
-    return () => { supabase.removeChannel(channel); };
+    const stop = poll(fetchAttendance, 5000);
+    return stop;
   }, [activeSession?.id]);
 
   // Auto-reset countdown
@@ -124,7 +111,6 @@ export const KioskMode: React.FC = () => {
 
     recognition.onresult = (event: any) => {
       const transcript = event.results[0][0].transcript;
-      // Extract digits from speech
       const chineseDigitMap: Record<string, string> = {
         '零': '0', '一': '1', '二': '2', '三': '3', '四': '4',
         '五': '5', '六': '6', '七': '7', '八': '8', '九': '9',
@@ -173,33 +159,13 @@ export const KioskMode: React.FC = () => {
     setStatus('searching');
 
     try {
-      const { data, error } = await supabase
-        .from('worksheet')
-        .select('*')
-        .eq('last_four_digits', digits)
-        .limit(1);
+      const data = await worksheetApi.lookup(digits);
 
-      if (error || !data || data.length === 0) {
+      if (!data || data.length === 0) {
         setStatus('error');
         setErrorMsg('找不到此號碼的參與者。');
         setTimeout(resetState, 3000);
         return;
-      }
-
-      // Check if already checked in today for this session
-      if (activeSession) {
-        const { data: existing } = await supabase
-          .from('attendance')
-          .select('id')
-          .eq('last_four_digits', digits)
-          .eq('session_id', activeSession.id);
-
-        if (existing && existing.length > 0) {
-          setStatus('error');
-          setErrorMsg('此號碼今日已報到。');
-          setTimeout(resetState, 3000);
-          return;
-        }
       }
 
       setFoundEntry(data[0] as WorksheetEntry);
@@ -215,17 +181,20 @@ export const KioskMode: React.FC = () => {
     if (!foundEntry || !activeSession) return;
 
     try {
-      const { error } = await supabase.rpc('kiosk_checkin', {
-        p_session_id: activeSession.id,
-        p_last_four: foundEntry.last_four_digits,
-        p_name: foundEntry.name,
+      await attendanceApi.kioskCheckin({
+        session_id: activeSession.id,
+        last_four_digits: foundEntry.last_four_digits,
+        name: foundEntry.name,
       });
-
-      if (error) throw error;
       setStatus('confirmed');
-    } catch {
-      setStatus('error');
-      setErrorMsg('報到失敗，請重試。');
+    } catch (err: any) {
+      if (err.message?.includes('Already')) {
+        setStatus('error');
+        setErrorMsg('此號碼今日已報到。');
+      } else {
+        setStatus('error');
+        setErrorMsg('報到失敗，請重試。');
+      }
       setTimeout(resetState, 3000);
     }
   };
