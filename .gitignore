@@ -2,6 +2,7 @@ node_modules/
 build/
 dist/
 deploy/
+ecclesia-deploy.zip
 coverage/
 .DS_Store
 *.log
